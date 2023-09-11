@@ -15,7 +15,7 @@ NO2 <- readxl::read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
 
 network.links <- st_read("../data/processed/network.sqlite", layer = "links") %>%
   # remove PT links
-  filter(highway != "pt")  ## CHECK THAT THIS IS CORRECT NETWORK FILE
+  filter(highway != "pt") 
 
 region <- st_read("../data/processed/region.sqlite")
 region.buffered <- st_read("../data/processed/region_buffer.sqlite")  # 10km buffer
