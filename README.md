@@ -17,7 +17,6 @@ The code requires the following input files, which are available [to authorised 
 # Output file
 The code produces the following output file, which is saved to the `data/processed` directory.
 
-#### `baseline.R`
 | File               | Content                                                  |
 |--------------------|----------------------------------------------------------|
 |*monitoring site location distances to roads.csv* | Distance from monitoring site locations to roads |
