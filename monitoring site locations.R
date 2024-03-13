@@ -13,7 +13,13 @@ PM25 <- readxl::read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
 NO2 <- readxl::read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
                          sheet = "no2_vic_2017-2019") 
 
-network.links <- st_read("../data/processed/network.sqlite", layer = "links") %>%
+# # old version
+# network.links <- st_read("../data/processed/network.sqlite", layer = "links") %>%
+#   # remove PT links
+#   filter(highway != "pt")
+
+# updated version
+network.links <- st_read("../data/processed/edgesMelbourne.gpkg") %>%
   # remove PT links
   filter(highway != "pt") 
 
