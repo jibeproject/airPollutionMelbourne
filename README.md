@@ -11,7 +11,7 @@ The code requires the following input files, which are available [to authorised 
 |--------------------|----------------------------------------------------------|
 |*data/processed/annual_pm_no2_vic.xlsx* | Location of air quality monitoring stations |
 |*data/processed/edgesMelbourne.gpkg* |Edges and nodes making up the road network |
-|*data/processed/region.sqlite* |Region: the study area where the intervention is to take place |
+|*data/processed/region.sqlite* |Region: the study area for the JIBE project    |
 |*data/processed/region_buffer.sqlite* |Region, buffered: the region, plus a buffer to limit edge effects |
 
 # Output file
