@@ -125,7 +125,8 @@ locations.with.nearest <- locations %>%
     nearest_car_edgeID = car.links$edgeID[nearest.indices],
     nearest_car_name = car.links$name[nearest.indices]
   ) %>%
-  dplyr::select(site, nearest_car_edgeID, nearest_car_name)
+  dplyr::select(site, nearest_car_edgeID, nearest_car_name) %>%
+  st_drop_geometry()
 
 locations.nearest <- locations.distances %>%
   left_join(locations.with.nearest, by = "site")
@@ -151,6 +152,7 @@ locations.classified <- locations.nearest %>%
     site %in% c("Dandenong")                            ~ "Suburban Industrial",
     site %in% c("Melbourne_CBD")                        ~ "Urban Traffic"
   ))
+
 
 # 3 Write output ----
 # -----------------------------------------------------------------------------#
