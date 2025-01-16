@@ -1,4 +1,5 @@
-# file to assess distance from monitoring site locations to roads
+# file to assess distance from monitoring site locations to roads,
+# classify them, and find nearest network link
 
 library(dplyr)
 library(readxl)
@@ -111,9 +112,48 @@ locations.distances <- locations %>%
   relocate(long, .after = last_col()) %>%
   relocate(lat, .after = last_col())
   
+# 3 Find nearest network links ---
+# -----------------------------------------------------------------------------#
+# indices of the nearest car links
+car.links <- network.links %>%
+  filter(is_car == TRUE)
+nearest.indices <- st_nearest_feature(locations, car.links)
+
+# add nearest edgeID and name
+locations.with.nearest <- locations %>%
+  mutate(
+    nearest_car_edgeID = car.links$edgeID[nearest.indices],
+    nearest_car_name = car.links$name[nearest.indices]
+  ) %>%
+  dplyr::select(site, nearest_car_edgeID, nearest_car_name)
+
+locations.nearest <- locations.distances %>%
+  left_join(locations.with.nearest, by = "site")
+
+
+# 4 Classify locations ----
+# -----------------------------------------------------------------------------#
+# For sites in Greater Melbourne only -classify monitoring site locations as 
+# 'Urban', 'Suburban' or 'Rural', and as 'Background', 'Traffic' or 'Industrial',
+# based on descriptions at https://uk-air.defra.gov.uk/networks/site-types.
+# Classification is done manually based on those descriptions.  However, for 
+# 'Traffic', a distance of up to 15m from the kerbside (rather than 10m as in
+# those descriptions), is accepted.
+
+locations.classified <- locations.nearest %>%
+  mutate(class = case_when(
+    site %in% c("Alphington", "Brooklyn", "Campbellfield",
+                "Millers_Rd", "Yarraville")             ~ "Suburban Traffic",
+    site %in% c("Altona_North", "Barbara_Beyer_Reserve",
+                "Donald_Mclean_Reserve", "Footscray", "Macleod",
+                "Melton", "Mooroolbark", "Point_Cook",
+                "Primula_Ave", "Railway_Reserve")       ~ "Suburban Background",
+    site %in% c("Dandenong")                            ~ "Suburban Industrial",
+    site %in% c("Melbourne_CBD")                        ~ "Urban Traffic"
+  ))
 
 # 3 Write output ----
 # -----------------------------------------------------------------------------#
-write.csv(locations.distances, "../data/processed/monitoring site location distances to roads.csv")
+write.csv(locations.classified, "../data/processed/monitoring site locations classified.csv", row.names = F)
 
 
