@@ -60,34 +60,35 @@ NO2_H <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
 
 PM2_5_U <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                             sheet = "U_PM2.5_Emiss_t") %>%
-  rename(PM2_5_U_hot = `2010`)
+  rename(PM2.5_U_hot = `2010`)
 
 PM2_5_R <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                             sheet = "R_PM2.5_Emiss_t") %>%
-  rename(PM2_5_R_hot = `2010`)
+  rename(PM2.5_R_hot = `2010`)
 
 PM2_5_H <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                             sheet = "H_PM2.5_Emiss_t") %>%
-  rename(PM2_5_H_hot = `2010`)
+  rename(PM2.5_H_hot = `2010`)
 
 PM_exhaust_U <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                                  sheet = "U_PM__exhaust__Emiss_t") %>%
-  rename(PM_exhaust_U_total = `2010`)
+  rename(PM.exhaust_U_total = `2010`)
 
 PM_exhaust_R <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                                  sheet = "R_PM__exhaust__Emiss_t") %>%
-  rename(PM_exhaust_R_hot = `2010`)
+  rename(PM.exhaust_R_hot = `2010`)
 
 PM_exhaust_H <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
                                  sheet = "H_PM__exhaust__Emiss_t") %>%
-  rename(PM_exhaust_H_hot = `2010`)
+  rename(PM.exhaust_H_hot = `2010`)
 
 
 # supplementary details, not exported into the main output workbook, but
 # extracted from the same run of the COPERT Australia tool
 # cold NO2 and PM_exhaust emissions (U only)
 U_cold <- readxl::read_xlsx("../data/processed/COPERT_outputs_vic_supp.xlsx",
-                            sheet = "cold")
+                            sheet = "cold") %>%
+  rename(PM.exhaust_U_cold = PM_exhaust_U_cold)
 
 # average length of trip (km)
 Ltrip <- readxl::read_xlsx("../data/processed/COPERT_outputs_vic_supp.xlsx",
@@ -95,18 +96,21 @@ Ltrip <- readxl::read_xlsx("../data/processed/COPERT_outputs_vic_supp.xlsx",
   filter(parameter == "Ltrip (km)") %>% pull(value)
 
 
-# future factor and gradient tables from PIARC (note - only passenger and 
-# heavy vehicle tables are loaded; but the workbook also contains light
-# commercial vehicles if required)
+# future factor and gradient tables from PIARC 
 pass_future <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                                 sheet = "pass_future", skip = 3) %>%
   setNames(c("Year", "CO_petrol", "CO_diesel", "NOx_petrol", "NOx_diesel", "Opacity_diesel"))
+
+ldv_future <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
+                                sheet = "ldv_future", skip = 1) %>%
+  slice(-1) %>%
+  setNames(c("Year", "CO", "NOx", "Opacity"))
 
 hgv_future <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                                 sheet = "hgv_future", skip = 2)
 
 gradient_names <- c("speed", "gradient_-6", "gradient_-4", "gradient_-2", "gradient_0",
-                    "gradient_2", "gradient_4", "gradient_6")
+                    "gradient_+2", "gradient_+4", "gradient_+6")
 
 pass_NOx_petrol <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                                      sheet = "pass_NOx_petrol", skip = 3) %>%
@@ -118,6 +122,14 @@ pass_NOx_diesel <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
 
 pass_PM_diesel <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                                      sheet = "pass_PM_diesel", skip = 4) %>%
+  setNames(gradient_names)
+
+ldv_NOx <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
+                             sheet = "ldv_NOx", skip = 4) %>%
+  setNames(gradient_names)
+
+ldv_PM <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
+                            sheet = "ldv_PM", skip = 4) %>%
   setNames(gradient_names)
 
 hgv_NOx <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
@@ -162,27 +174,57 @@ emissions.2010.long <- vehicles %>%
   # calculate hot emissions where separate cold emissions are provided (only
   # applies to NO2 and PM_exhaust for Urban)
   mutate(NO2_U_hot = NO2_U_total - NO2_U_cold,
-         PM_exhaust_U_hot = PM_exhaust_U_total - PM_exhaust_U_cold) 
+         PM.exhaust_U_hot = PM.exhaust_U_total - PM.exhaust_U_cold) %>%
+  
+  # subtract PM.exhaust from PM2.5 to get non-exhaust emissions, and 
+  # re-name PM.exhaust as PM2.5 (so now 'PM2.5' is the PM2.5 exhaust emissions,
+  # and 'PM2.5.non-exhaust' is the PM 2.5 non-exhaust emissions)
+  mutate(PM2.5.non.exhaust_U_hot = PM2.5_U_hot - PM.exhaust_U_hot,
+         PM2.5.non.exhaust_R_hot = PM2.5_R_hot - PM.exhaust_R_hot,
+         PM2.5.non.exhaust_H_hot = PM2.5_H_hot - PM.exhaust_H_hot,
+         PM2.5_U_hot = PM.exhaust_U_hot,
+         PM2.5_R_hot = PM.exhaust_R_hot,
+         PM2.5_H_hot = PM.exhaust_H_hot) %>%
+  rename(PM2.5_U_cold = PM.exhaust_U_cold) %>%
+  
+  # select required fields
+  dplyr::select(Sector, Subsector, Technology, vehicles, km_per_year,
+                NO2_U_hot, NO2_R_hot, NO2_H_hot,
+                PM2.5_U_hot, PM2.5_R_hot, PM2.5_H_hot,
+                PM2.5.non.exhaust_U_hot, PM2.5.non.exhaust_R_hot, PM2.5.non.exhaust_H_hot,
+                NO2_U_cold, PM2.5_U_cold,
+                U_share, R_share, H_share,
+                distance, U_dist, R_dist, H_dist) %>%
+  
+  # add 'VehCat' field (grouping cars with SUVs), and omit mopeds/motorcycles
+  mutate(VehCat = case_when(
+    Sector %in% c("Passenger Cars", "SUV") ~ "pass. car",
+    Sector == "Light Commercial Vehicles"  ~ "LCV",
+    Sector == "Heavy Duty Trucks"          ~ "HGV",
+    Sector == "Buses"                      ~ "urban bus",
+    TRUE                                   ~ "other"
+  )) %>%
+  filter(VehCat != "other")
 
 # calculate summary table
 emissions.2010 <- emissions.2010.long %>%
   
   # summarise by vehicle type
-  group_by(Sector) %>%
+  group_by(VehCat) %>%
   summarise(U_dist = sum(U_dist),
             R_dist = sum(R_dist),
             H_dist = sum(H_dist),
             NO2_U_hot = sum(NO2_U_hot),
             NO2_R_hot = sum(NO2_R_hot),
             NO2_H_hot = sum(NO2_H_hot),
-            PM2_5_U_hot = sum(PM2_5_U_hot),
-            PM2_5_R_hot = sum(PM2_5_R_hot),
-            PM2_5_H_hot = sum(PM2_5_H_hot),
-            PM_exhaust_U_hot = sum(PM_exhaust_U_hot),
-            PM_exhaust_R_hot = sum(PM_exhaust_R_hot),
-            PM_exhaust_H_hot = sum(PM_exhaust_H_hot),
+            PM2.5_U_hot = sum(PM2.5_U_hot),
+            PM2.5_R_hot = sum(PM2.5_R_hot),
+            PM2.5_H_hot = sum(PM2.5_H_hot),
+            PM2.5.non.exhaust_U_hot = sum(PM2.5.non.exhaust_U_hot),
+            PM2.5.non.exhaust_R_hot = sum(PM2.5.non.exhaust_R_hot),
+            PM2.5.non.exhaust_H_hot = sum(PM2.5.non.exhaust_H_hot),
             NO2_U_cold = sum(NO2_U_cold),
-            PM_exhaust_U_cold = sum(PM_exhaust_U_cold)) %>%
+            PM2.5_U_cold = sum(PM2.5_U_cold)) %>%
   ungroup() %>%
   
   # convert hot emissions to g/km by multiplying tonnes by 1m to convert to g,
@@ -190,12 +232,12 @@ emissions.2010 <- emissions.2010.long %>%
   mutate(NO2_U_hot = NO2_U_hot * 1000000 / U_dist,
          NO2_R_hot = NO2_R_hot * 1000000 / R_dist,
          NO2_H_hot = NO2_H_hot * 1000000 / H_dist,
-         PM2_5_U_hot = PM2_5_U_hot * 1000000 / U_dist,
-         PM2_5_R_hot = PM2_5_R_hot * 1000000 / R_dist,
-         PM2_5_H_hot = PM2_5_H_hot * 1000000 / H_dist,
-         PM_exhaust_U_hot = PM_exhaust_U_hot * 1000000 / U_dist,
-         PM_exhaust_R_hot = PM_exhaust_R_hot * 1000000 / R_dist,
-         PM_exhaust_H_hot = PM_exhaust_H_hot * 1000000 / H_dist) %>%
+         PM2.5_U_hot = PM2.5_U_hot * 1000000 / U_dist,
+         PM2.5_R_hot = PM2.5_R_hot * 1000000 / R_dist,
+         PM2.5_H_hot = PM2.5_H_hot * 1000000 / H_dist,
+         PM2.5.non.exhaust_U_hot = PM2.5.non.exhaust_U_hot * 1000000 / U_dist,
+         PM2.5.non.exhaust_R_hot = PM2.5.non.exhaust_R_hot * 1000000 / R_dist,
+         PM2.5.non.exhaust_H_hot = PM2.5.non.exhaust_H_hot * 1000000 / H_dist) %>%
   
   # convert cold emissions to g/start by multiplying tonnes by 1m to convert to
   # g, then dividing by number of starts (that is, distance divided by Ltrip) - 
@@ -204,7 +246,7 @@ emissions.2010 <- emissions.2010.long %>%
   # Australia tool: it's assumed that the majority of vehicles start their trips 
   # from urban areas)
   mutate(NO2_U_cold = NO2_U_cold * 1000000 / (U_dist / Ltrip),
-         PM_exhaust_U_cold = PM_exhaust_U_cold * 1000000 / (U_dist / Ltrip)) %>%
+         PM2.5_U_cold = PM2.5_U_cold * 1000000 / (U_dist / Ltrip)) %>%
   
   # omit the distance fields
   dplyr::select(-(contains("dist")))
@@ -213,9 +255,7 @@ emissions.2010 <- emissions.2010.long %>%
 ## 2.2 Emissions for 2020 ----
 ## ------------------------------------#
 
-# convert 2010 emissions to 2020 by using the PIARC future factors - only for 
-# passenger cars, heavy vehicles and buses (with both heavy vehicles and
-# buses using the PIARC hgv factors)
+# convert 2010 emissions to 2020 by using the PIARC future factors
 
 # note the PIARC NOx factors are used for NO2, and the PIARC Opacity factors for PM
 
@@ -226,6 +266,10 @@ ft_pass_NOx_diesel <- pass_future %>%
   filter(Year == 2020) %>% pull(NOx_diesel) %>% as.numeric()
 ft_pass_PM <- pass_future %>%
   filter(Year == 2020) %>% pull(Opacity_diesel) %>% as.numeric()
+ft_lcv_NOx <- ldv_future %>%
+  filter(Year == 2020) %>% pull(NOx) %>% as.numeric()
+ft_lcv_PM <- ldv_future %>%
+  filter(Year == 2020) %>% pull(Opacity) %>% as.numeric()
 ft_heavy_NOx <- hgv_future %>%
   filter(Year == 2020) %>% pull(NOx) %>% as.numeric()
 ft_heavy_PM <- hgv_future %>%
@@ -233,11 +277,11 @@ ft_heavy_PM <- hgv_future %>%
 
 # calculate the combined passenger car NOx factor from the petrol and
 # diesel figures by reference to the distance travelled by each of the petrol
-# and diesel cars (note - using only passenger cars here, not SUV)
+# and diesel cars (note - both passenger cars and SUV)
 
-# # review different fuel types to consider how LPG should be treated
+# review different fuel types to consider how LPG should be treated
 # pass_review <- emissions.2010.long %>%
-#   filter(Sector == "Passenger Cars") %>%
+#   filter(Sector == "Passenger Cars" | Sector == "SUV") %>%
 #   mutate(fuel = case_when(
 #     str_detect(Subsector, "petrol") ~ "petrol",
 #     str_detect(Subsector, "diesel") ~ "diesel",
@@ -247,19 +291,19 @@ ft_heavy_PM <- hgv_future %>%
 #   group_by(fuel) %>%
 #   summarise(U_dist = sum(U_dist),
 #             NO2_U_hot = sum(NO2_U_hot),
-#             PM2_5_U_hot = sum(PM2_5_U_hot),
-#             PM_exhaust_U_hot = sum(PM_exhaust_U_hot)) %>%
+#             PM2.5_U_hot = sum(PM2.5_U_hot),
+#             PM2.5.non.exhaust_U_hot = sum(PM2.5.non.exhaust_U_hot)) %>%
 #   ungroup() %>%
 #   mutate(NO2_U_hot = NO2_U_hot * 1000000 / U_dist,
-#          PM2_5_U_hot = PM2_5_U_hot * 1000000 / U_dist,
-#          PM_exhaust_U_hot = PM_exhaust_U_hot * 1000000 / U_dist)
-# # Reviewed result - LPG and E10 are both closer to petrol than to diesel; 
+#          PM2.5_U_hot = PM2.5_U_hot * 1000000 / U_dist,
+#          PM2.5.non.exhaust_U_hot = PM2.5.non.exhaust_U_hot * 1000000 / U_dist)
+# # Reviewed result - LPG and E10 are both closer to petrol than to diesel;
 # # so combine them and treat as equivalent to petrol
 
-# find the percentage of passenger car trip distance done with diesel fuel 
+# find the percentage of passenger car (incl. SUV) trip distance done with diesel fuel 
 pass_diesel <- emissions.2010.long %>%
   # classify cars as 'diesel' if diesel used, or petrol if any of petrol, E10 or LPG
-  filter(Sector == "Passenger Cars") %>%
+  filter(Sector == "Passenger Cars" | Sector == "SUV") %>%
   mutate(fuel = ifelse(str_detect(Subsector, "diesel"), "diesel", "petrol")) %>%
   # calculate the milage for each fuel type
   group_by(fuel) %>%
@@ -276,38 +320,6 @@ ft_pass_NOx <- (ft_pass_NOx_diesel * pass_diesel) + (ft_pass_NOx_petrol * (1 - p
 # calculate the 2020 emissions
 emissions.2020 <- emissions.2010 %>%
   
-  # retain only passenger cars, heavy duty trucks and buses
-  filter(Sector %in% c("Passenger Cars", "Heavy Duty Trucks", "Buses")) %>%
-  
-  # multiply by future factors
-  mutate(NO2_U_hot = ifelse(Sector == "Passenger Cars", 
-                            NO2_U_hot * ft_pass_NOx, NO2_U_hot * ft_heavy_NOx),
-         NO2_R_hot = ifelse(Sector == "Passenger Cars", 
-                            NO2_R_hot * ft_pass_NOx, NO2_R_hot * ft_heavy_NOx),
-         NO2_H_hot = ifelse(Sector == "Passenger Cars", 
-                            NO2_H_hot * ft_pass_NOx, NO2_H_hot * ft_heavy_NOx),
-         PM2_5_U_hot = ifelse(Sector == "Passenger Cars", 
-                               PM2_5_U_hot * ft_pass_PM, PM2_5_U_hot * ft_heavy_PM),
-         PM2_5_R_hot = ifelse(Sector == "Passenger Cars", 
-                               PM2_5_R_hot * ft_pass_PM, PM2_5_R_hot * ft_heavy_PM),
-         PM2_5_H_hot = ifelse(Sector == "Passenger Cars", 
-                               PM2_5_H_hot * ft_pass_PM, PM2_5_H_hot * ft_heavy_PM),
-         PM_exhaust_U_hot = ifelse(Sector == "Passenger Cars", 
-                               PM_exhaust_U_hot * ft_pass_PM, PM_exhaust_U_hot * ft_heavy_PM),
-         PM_exhaust_R_hot = ifelse(Sector == "Passenger Cars",
-                               PM_exhaust_R_hot * ft_pass_PM, PM_exhaust_R_hot * ft_heavy_PM),
-         PM_exhaust_H_hot = ifelse(Sector == "Passenger Cars", 
-                               PM_exhaust_H_hot * ft_pass_PM, PM_exhaust_H_hot * ft_heavy_PM),
-         NO2_U_cold = ifelse(Sector == "Passenger Cars",
-                             NO2_U_cold * ft_pass_NOx, NO2_U_cold * ft_heavy_NOx),
-         PM_exhaust_U_cold = ifelse(Sector == "Passenger Cars",
-                                    PM_exhaust_U_cold * ft_pass_PM, PM_exhaust_U_cold * ft_heavy_PM)
-  ) %>%
-  
-  # update headings to facilitate split into long form with underscore as divider
-  rename_with(~ sub("^PM2_5", "PM2.5", .), starts_with("PM2_5")) %>%
-  rename_with(~ sub("^PM_exhaust", "PM-exhaust", .), starts_with("PM_exhaust")) %>%
-  
   # convert to long-form table 
     pivot_longer(cols = contains("_"),
                  names_to = "Component_RoadCat_temp", 
@@ -316,6 +328,11 @@ emissions.2020 <- emissions.2010 %>%
              into = c("Component", "RoadCat", "temp"), 
              sep = "_") %>%
   
+  # format name for PM2.5 non-exhaust emissions
+  mutate(Component = ifelse(Component == "PM2.5.non.exhaust", 
+                            "PM2.5 (non-exhaust)",
+                            Component)) %>%
+  
   # complete full names for RoadCat column
   mutate(RoadCat = case_when(
     RoadCat == "U" ~ "Urban",
@@ -323,16 +340,37 @@ emissions.2020 <- emissions.2010 %>%
     RoadCat == "H" ~ "Highway"
   )) %>%
   
-  # rename Sector
-  rename(VehCat = Sector)
+  # multiply by future factors
+  mutate(value = case_when(
+    VehCat == "pass. car" ~ case_when(
+      Component == "NO2"                               ~ value * ft_pass_NOx,
+      Component %in% c("PM2.5", "PM2.5 (non-exhaust)") ~ value * ft_pass_PM
+    ),
+    VehCat == "LCV" ~ case_when(
+      Component == "NO2"                               ~ value * ft_lcv_NOx,
+      Component %in% c("PM2.5", "PM2.5 (non-exhaust)") ~ value * ft_lcv_PM
+    ),
+    VehCat %in% c("HGV", "urban bus") ~ case_when(
+      Component == "NO2"                               ~ value * ft_heavy_NOx,
+      Component %in% c("PM2.5", "PM2.5 (non-exhaust)") ~ value * ft_heavy_PM
+      
+    )
+  ))
 
-# separate tables for cold (now final) and hot (zero gradient, requires 
+# make separate tables for cold (now final) and hot (zero gradient, requires 
 # further processing to add other gradients in section 3)
+
 emissions.cold <- emissions.2020 %>%
+  
   filter(temp == "cold") %>%
   dplyr::select(-temp) %>%
-  # rename to g_start (grams per start)
-  rename(g_start = value)
+  
+  # finalise other columns
+  mutate(Year = 2020, AmbientCondPattern = NA) %>%
+  rename(EFA_weighted = value) %>%
+  
+  # select required columns
+  dplyr::select(VehCat, Year, Component, RoadCat, AmbientCondPattern, EFA_weighted)
 
 emissions.hot.zero <- emissions.2020 %>%
   filter(temp == "hot") %>%
@@ -349,6 +387,10 @@ emissions.hot.zero <- emissions.2020 %>%
 # gradient set at 1, and the factors for other gradients calculated as multiples
 # based on the relationships between the raw values of the emissions for the gradients.
 
+# in the Manchester (HBEFA) outputs, there are no gradient differences for 
+# PM2.5 non-exhaust emissions; so consistently, no gradient changes are applied
+# here for PM2.5.non.exhaust either
+
 # extract assumed speeds for class of vehicle
 # (actually the speed is the same for all vehicles of each class, but this code
 # would find a weighted average if it were not)
@@ -357,7 +399,7 @@ speeds <- emissions.2010.long %>%
   left_join(R_speed, by = c("Sector", "Subsector", "Technology")) %>%
   left_join(H_speed, by = c("Sector", "Subsector", "Technology")) %>%
   # mean of the speed for the vehicle class, weighted by distance
-  group_by(Sector) %>%
+  group_by(VehCat) %>%
   summarise(Urban = weighted.mean(U_speed, w = U_dist),
             Rural = weighted.mean(R_speed, w = R_dist),
             Highway = weighted.mean(H_speed, w = H_dist)) %>%
@@ -368,10 +410,10 @@ speeds <- emissions.2010.long %>%
 # if speed is not a multiple of 10 (to match the PIARC table), then the rows above and
 # below are selected (eg 35 selects rows 30 and 40); then the rows are summed,
 # and the results converted to factors with gradient_0 set at 1
-speed_gradients <- function(VehCat, Component, RoadCat, PIARC_table) {
+speed_gradients <- function(veh_cat, component, road_cat, PIARC_table) {
   
   # speed for the vehicle class and road category
-  case_speed <- speeds %>% filter(Sector == VehCat) %>% pull(get(RoadCat))
+  case_speed <- speeds %>% filter(VehCat == veh_cat) %>% pull(get(road_cat))
   
   # extract the relevant row(s) from the PIARC table (if speed is a multiple of
   # 10, one row; if not, the next row above and below)
@@ -389,37 +431,53 @@ speed_gradients <- function(VehCat, Component, RoadCat, PIARC_table) {
     mutate(across(everything(), ~. / gradient_0)) %>%
     
     # add columns for joining
-    mutate(VehCat = VehCat, Component = Component, RoadCat = RoadCat)
+    mutate(VehCat = veh_cat, Component = component, RoadCat = road_cat)
   
   return(gradient_row)
+}
+
+# function to return a row with factors of 1 for PM2.5 (non-exhaust), where 
+# there is no gradient effect
+no_gradients <- function(veh_cat, component, road_cat, gradient_names) {
+  
+  # create one-row dataframe with 1s in each column
+  no_gradient_row <- as_tibble(setNames(as.list(rep(1, length(gradient_names))), gradient_names)) %>%
+    
+    # remove 'speed' column
+    dplyr::select(-speed) %>%
+    
+    # add columns for joining
+    mutate(VehCat = veh_cat, Component = component, RoadCat = road_cat)
+  
+    return(no_gradient_row)
 }
 
 # build the passenger NO2 gradient factors, which are calculated from both petrol and diesel,
 # weighted according to proportions of car travel in petrol or diesel cars 
 # (that is, using pass_diesel, calculated in section 2.2)
-pass_NO2_diesel_grad_U <- speed_gradients("Passenger Cars", "NO2", "Urban", pass_NOx_diesel) %>%
+pass_NO2_diesel_grad_U <- speed_gradients("pass. car", "NO2", "Urban", pass_NOx_diesel) %>%
   mutate(across(starts_with("gradient"), ~ . * pass_diesel))
-pass_NO2_petrol_grad_U <- speed_gradients("Passenger Cars", "NO2", "Urban", pass_NOx_petrol) %>%
+pass_NO2_petrol_grad_U <- speed_gradients("pass. car", "NO2", "Urban", pass_NOx_petrol) %>%
   mutate(across(starts_with("gradient"), ~ . * (1 - pass_diesel)))
 pass_NO2_grad_U <- bind_rows(pass_NO2_petrol_grad_U, pass_NO2_diesel_grad_U) %>%
   summarise(across(starts_with("gradient"), sum)) %>%
-  mutate(VehCat = "Passenger Cars", Component = "NO2", RoadCat = "Urban")
+  mutate(VehCat = "pass. car", Component = "NO2", RoadCat = "Urban")
 
-pass_NO2_diesel_grad_R <- speed_gradients("Passenger Cars", "NO2", "Rural", pass_NOx_diesel) %>%
+pass_NO2_diesel_grad_R <- speed_gradients("pass. car", "NO2", "Rural", pass_NOx_diesel) %>%
   mutate(across(starts_with("gradient"), ~ . * pass_diesel))
-pass_NO2_petrol_grad_R <- speed_gradients("Passenger Cars", "NO2", "Rural", pass_NOx_petrol) %>%
+pass_NO2_petrol_grad_R <- speed_gradients("pass. car", "NO2", "Rural", pass_NOx_petrol) %>%
   mutate(across(starts_with("gradient"), ~ . * (1 - pass_diesel)))
 pass_NO2_grad_R <- bind_rows(pass_NO2_petrol_grad_R, pass_NO2_diesel_grad_R) %>%
   summarise(across(starts_with("gradient"), sum)) %>%
-  mutate(VehCat = "Passenger Cars", Component = "NO2", RoadCat = "Rural")
+  mutate(VehCat = "pass. car", Component = "NO2", RoadCat = "Rural")
 
-pass_NO2_diesel_grad_H <- speed_gradients("Passenger Cars", "NO2", "Highway", pass_NOx_diesel) %>%
+pass_NO2_diesel_grad_H <- speed_gradients("pass. car", "NO2", "Highway", pass_NOx_diesel) %>%
   mutate(across(starts_with("gradient"), ~ . * pass_diesel))
-pass_NO2_petrol_grad_H <- speed_gradients("Passenger Cars", "NO2", "Highway", pass_NOx_petrol) %>%
+pass_NO2_petrol_grad_H <- speed_gradients("pass. car", "NO2", "Highway", pass_NOx_petrol) %>%
   mutate(across(starts_with("gradient"), ~ . * (1 - pass_diesel)))
 pass_NO2_grad_H <- bind_rows(pass_NO2_petrol_grad_H, pass_NO2_diesel_grad_H) %>%
   summarise(across(starts_with("gradient"), sum)) %>%
-  mutate(VehCat = "Passenger Cars", Component = "NO2", RoadCat = "Highway")
+  mutate(VehCat = "pass. car", Component = "NO2", RoadCat = "Highway")
 
 # combine the passenger NO2 gradient factors with the other factors (which
 # are each built from a single PIARC table)
@@ -427,33 +485,42 @@ gradient.factors <-
   bind_rows(pass_NO2_grad_U,
             pass_NO2_grad_R,
             pass_NO2_grad_H,
-            speed_gradients("Passenger Cars", "PM2.5", "Urban", pass_PM_diesel),
-            speed_gradients("Passenger Cars", "PM2.5", "Rural", pass_PM_diesel),
-            speed_gradients("Passenger Cars", "PM2.5", "Highway", pass_PM_diesel),
-            speed_gradients("Passenger Cars", "PM-exhaust", "Urban", pass_PM_diesel),
-            speed_gradients("Passenger Cars", "PM-exhaust", "Rural", pass_PM_diesel),
-            speed_gradients("Passenger Cars", "PM-exhaust", "Highway", pass_PM_diesel),
-            speed_gradients("Heavy Duty Trucks", "NO2", "Urban", hgv_NOx),
-            speed_gradients("Heavy Duty Trucks", "NO2", "Rural", hgv_NOx),
-            speed_gradients("Heavy Duty Trucks", "NO2", "Highway", hgv_NOx),
-            speed_gradients("Heavy Duty Trucks", "PM2.5", "Urban", hgv_PM),
-            speed_gradients("Heavy Duty Trucks", "PM2.5", "Rural", hgv_PM),
-            speed_gradients("Heavy Duty Trucks", "PM2.5", "Highway", hgv_PM),
-            speed_gradients("Heavy Duty Trucks", "PM-exhaust", "Urban", hgv_PM),
-            speed_gradients("Heavy Duty Trucks", "PM-exhaust", "Rural", hgv_PM),
-            speed_gradients("Heavy Duty Trucks", "PM-exhaust", "Highway", hgv_PM),
-            speed_gradients("Buses", "NO2", "Urban", hgv_NOx),
-            speed_gradients("Buses", "NO2", "Rural", hgv_NOx),
-            speed_gradients("Buses", "NO2", "Highway", hgv_NOx),
-            speed_gradients("Buses", "PM2.5", "Urban", hgv_PM),
-            speed_gradients("Buses", "PM2.5", "Rural", hgv_PM),
-            speed_gradients("Buses", "PM2.5", "Highway", hgv_PM),
-            speed_gradients("Buses", "PM-exhaust", "Urban", hgv_PM),
-            speed_gradients("Buses", "PM-exhaust", "Rural", hgv_PM),
-            speed_gradients("Buses", "PM-exhaust", "Highway", hgv_PM),
+            speed_gradients("pass. car", "PM2.5", "Urban", pass_PM_diesel),
+            speed_gradients("pass. car", "PM2.5", "Rural", pass_PM_diesel),
+            speed_gradients("pass. car", "PM2.5", "Highway", pass_PM_diesel),
+            no_gradients("pass. car", "PM2.5 (non-exhaust)", "Urban", gradient_names),
+            no_gradients("pass. car", "PM2.5 (non-exhaust)", "Rural", gradient_names),
+            no_gradients("pass. car", "PM2.5 (non-exhaust)", "Highway", gradient_names),
+            speed_gradients("LCV", "NO2", "Urban", ldv_NOx),
+            speed_gradients("LCV", "NO2", "Rural", ldv_NOx),
+            speed_gradients("LCV", "NO2", "Highway", ldv_NOx),
+            speed_gradients("LCV", "PM2.5", "Urban", ldv_PM),
+            speed_gradients("LCV", "PM2.5", "Rural", ldv_PM),
+            speed_gradients("LCV", "PM2.5", "Highway", ldv_PM),
+            no_gradients("LCV", "PM2.5 (non-exhaust)", "Urban", gradient_names),
+            no_gradients("LCV", "PM2.5 (non-exhaust)", "Rural", gradient_names),
+            no_gradients("LCV", "PM2.5 (non-exhaust)", "Highway", gradient_names),
+            speed_gradients("HGV", "NO2", "Urban", hgv_NOx),
+            speed_gradients("HGV", "NO2", "Rural", hgv_NOx),
+            speed_gradients("HGV", "NO2", "Highway", hgv_NOx),
+            speed_gradients("HGV", "PM2.5", "Urban", hgv_PM),
+            speed_gradients("HGV", "PM2.5", "Rural", hgv_PM),
+            speed_gradients("HGV", "PM2.5", "Highway", hgv_PM),
+            no_gradients("HGV", "PM2.5 (non-exhaust)", "Urban", gradient_names),
+            no_gradients("HGV", "PM2.5 (non-exhaust)", "Rural", gradient_names),
+            no_gradients("HGV", "PM2.5 (non-exhaust)", "Highway", gradient_names),
+            speed_gradients("urban bus", "NO2", "Urban", hgv_NOx),
+            speed_gradients("urban bus", "NO2", "Rural", hgv_NOx),
+            speed_gradients("urban bus", "NO2", "Highway", hgv_NOx),
+            speed_gradients("urban bus", "PM2.5", "Urban", hgv_PM),
+            speed_gradients("urban bus", "PM2.5", "Rural", hgv_PM),
+            speed_gradients("urban bus", "PM2.5", "Highway", hgv_PM),
+            no_gradients("urban bus", "PM2.5 (non-exhaust)", "Urban", gradient_names),
+            no_gradients("urban bus", "PM2.5 (non-exhaust)", "Rural", gradient_names),
+            no_gradients("urban bus", "PM2.5 (non-exhaust)", "Highway", gradient_names),
   )
 
-# add gradients to the hot emissions table
+# add gradients to the hot emissions table, and finalise
 emissions.hot <- emissions.hot.zero %>%
   left_join(gradient.factors, by = c("VehCat", "Component", "RoadCat")) %>%
   
@@ -467,17 +534,29 @@ emissions.hot <- emissions.hot.zero %>%
   # pivot to long form
   pivot_longer(cols = contains("gradient"),
                names_to = "Gradient", 
-               values_to = "g_km") %>%
+               values_to = "EFA_weighted") %>%
   
-  # convert Gradient column to just a figure
-  mutate(Gradient = as.numeric(str_replace(Gradient, "gradient_", "")))
+  # remove word 'gradient' from Gradient column and add "%"
+  mutate(Gradient = paste0(str_replace(Gradient, "gradient_", ""), "%")) %>%
+  
+  # add speed ('V_weighted' column) for the relevant row
+  left_join(speeds %>%
+              # pivot longer, with Urban/Rural/Highway columns as 'RoadCat'
+              pivot_longer(cols = c("Urban", "Rural", "Highway"), 
+                           names_to = "RoadCat", values_to = "V_weighted"),
+            by = c("VehCat", "RoadCat")) %>%
+  
+  # add year
+  mutate(Year = 2020) %>%
+  
+  # organise columns [FOR NOW, has RoadCat instead of TrafficSit]
+  dplyr::select(VehCat, Year, Component, RoadCat, Gradient, V_weighted, EFA_weighted)
 
 
 # 4 Write outputs ----
 # -----------------------------------------------------------------------------#
 
-write.csv(emissions.hot, "../data/processed/emission factors hot.csv", row.names = F)
-write.csv(emissions.cold, "../data/processed/emission factors cold start.csv", row.names = F)
-
+write.table(emissions.hot, "../data/processed/EFA_hot_melbourne.txt", sep = ";", row.names = F)
+write.table(emissions.cold, "../data/processed/EFA_coldstart_melbourne.txt", sep = ";", row.names = F)
 
                                                           
