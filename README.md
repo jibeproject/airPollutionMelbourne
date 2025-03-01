@@ -7,6 +7,10 @@ There are two scripts:
 - `monitoring site locations.R`, which assesses the distance from air quality monitoring sites to roads, finds the nearest network links (accessible by car) to the monitoring stations, and classifies the monitoring sites based on descriptions at https://uk-air.defra.gov.uk/networks/site-types.
 - `emission factors.R`, which calculates NO2 and particulate emission factors for Victoria using data from the COPERT Australia v1.3 tool and PIARC.
 
+In addition to these scripts (described below), the repository contains the following validation documents:
+- `compare emission factors.Rmd`, which compares Melbourne and Manchester emission factor values.
+- [to be added when further advanced] `JIBE_AirPollution_Validation_Melb.Rmd`, which validates Melbourne model air pollution outputs against published values.
+
 # `monitoring site locations.R`
 
 ## Input files
