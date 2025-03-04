@@ -194,7 +194,7 @@ locations.classified <- locations.nearest %>%
   # add group notes
   mutate(notes = case_when(
     site %in% c("Barbara_Beyer_Reserve", "Donald_Mclean_Reserve", "Millers_Rd",
-                "Primula_Ave", "Railway_Reserve", "Yarraville") ~ "West Gate Project",
+                "Primula_Ave", "Railway_Reserve", "Yarraville") ~ "West Gate Tunnel Project",
     site %in% c("Churchill", "Moe", "Morwell_East", "Morwell_South",
                 "Traralgon")                                    ~ "Latrobe Valley"
   ))
