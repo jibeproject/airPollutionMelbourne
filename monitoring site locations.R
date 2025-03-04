@@ -14,6 +14,8 @@ PM25 <- readxl::read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
 NO2 <- readxl::read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
                          sheet = "no2_vic_2017-2019") 
 
+melb_hourly <- read_xlsx("../data/original/2018_All_sites_air_quality_hourly_avg_AIR-I-F-V-VH-O-S1-DB-M2-4-0.xlsx")
+
 # # old version
 # network.links <- st_read("../data/processed/network.sqlite", layer = "links") %>%
 #   # remove PT links
@@ -42,9 +44,22 @@ NO2.locations <- NO2 %>%
   # round to same level as PM25
   mutate(lat = round(lat, 6), long = round(long, 6))
 
+# Churchill (a site that doesn't appear in the annual PM2.5 or NO2 locations,
+# but does have PM2.5 readings in the EPA melb hourly readings)
+Churchill <- melb_hourly %>%
+  dplyr::select(site = sp_name, lat = latitude, long = longitude) %>%
+  filter(site == "Churchill") %>%
+  distinct() %>%
+  mutate(PM25 = 1) %>%
+  # round to same level as PM25
+  mutate(lat = round(lat, 6), long = round(long, 6))
+
 # combined locations
 locations <- full_join(PM.25.locations, NO2.locations,
                        by = c("site", "lat", "long")) %>%
+  
+  # add Churchill
+  bind_rows(Churchill) %>%
   
   # arrange names in alphabetical order
   arrange(., site) %>%
@@ -137,20 +152,51 @@ locations.nearest <- locations.distances %>%
 # For sites in Greater Melbourne only -classify monitoring site locations as 
 # 'Urban', 'Suburban' or 'Rural', and as 'Background', 'Traffic' or 'Industrial',
 # based on descriptions at https://uk-air.defra.gov.uk/networks/site-types.
-# Classification is done manually based on those descriptions.  However, for 
-# 'Traffic', a distance of up to 15m from the kerbside (rather than 10m as in
-# those descriptions), is accepted.
+# Classification is done manually based on those descriptions.  
+
+# Note that the following sites are between 10m and 15m from kerbside:
+# Alphington, Brooklyn, Campbellfield, Melbourne CBD, Millers Rd and Yarraville; 
+# and also Churchill (but a residential loop road with minimal traffic).  In the UK 
+# descriptions, 'Traffic' requires the sampling point to be no more than 10m from
+# kerbside.  So these sites could be 'Traffic' if a greater distance of 15m
+# were used instead of 10m.  However, results suggest they are no higher than
+# comparable background readings - so the strict 10m has been applied (and
+# as a result, ther are no 'Traffic' sites).
+
+# # Old version, Melbourne only, where up to 15m was accepted as 'Traffic'
+# locations.classified <- locations.nearest %>%
+#   mutate(class = case_when(
+#     site %in% c("Alphington", "Brooklyn", "Campbellfield",
+#                 "Millers_Rd", "Yarraville")             ~ "Suburban Traffic",
+#     site %in% c("Altona_North", "Barbara_Beyer_Reserve",
+#                 "Donald_Mclean_Reserve", "Footscray", "Macleod",
+#                 "Melton", "Mooroolbark", "Point_Cook",
+#                 "Primula_Ave", "Railway_Reserve")       ~ "Suburban Background",
+#     site %in% c("Dandenong")                            ~ "Suburban Industrial",
+#     site %in% c("Melbourne_CBD")                        ~ "Urban Traffic"
+#   ))
 
 locations.classified <- locations.nearest %>%
+  # add class
   mutate(class = case_when(
-    site %in% c("Alphington", "Brooklyn", "Campbellfield",
-                "Millers_Rd", "Yarraville")             ~ "Suburban Traffic",
-    site %in% c("Altona_North", "Barbara_Beyer_Reserve",
-                "Donald_Mclean_Reserve", "Footscray", "Macleod",
-                "Melton", "Mooroolbark", "Point_Cook",
-                "Primula_Ave", "Railway_Reserve")       ~ "Suburban Background",
-    site %in% c("Dandenong")                            ~ "Suburban Industrial",
-    site %in% c("Melbourne_CBD")                        ~ "Urban Traffic"
+    site %in% c("Alphington", "Altona_North", "Barbara_Beyer_Reserve",
+                "Brooklyn", "Campbellfield","Donald_Mclean_Reserve", 
+                "Footscray", "Macleod", "Melton", "Millers_Rd", "Mooroolbark", 
+                "Point_Cook", "Primula_Ave", "Railway_Reserve", 
+                "Yarraville")         ~ "Suburban Background",
+    site %in% c("Dandenong")          ~ "Suburban Industrial",
+    site %in% c("Melbourne_CBD")      ~ "Urban Background",
+    site %in% c("Churchill", "Moe", "Morwell_East", "Morwell_South",
+                "Newborough", "Rosedale", "Traralgon",
+                "Wangaratta")         ~ "Suburban Background (outside Melbourne)",
+    site %in% c("Geelong_South")      ~   "Suburban Industrial (outside Melbourne)"
+  )) %>%
+  # add group notes
+  mutate(notes = case_when(
+    site %in% c("Barbara_Beyer_Reserve", "Donald_Mclean_Reserve", "Millers_Rd",
+                "Primula_Ave", "Railway_Reserve", "Yarraville") ~ "West Gate Project",
+    site %in% c("Churchill", "Moe", "Morwell_East", "Morwell_South",
+                "Traralgon")                                    ~ "Latrobe Valley"
   ))
 
 
