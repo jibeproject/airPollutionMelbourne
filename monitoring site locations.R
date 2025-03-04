@@ -196,7 +196,7 @@ locations.classified <- locations.nearest %>%
     site %in% c("Barbara_Beyer_Reserve", "Donald_Mclean_Reserve", "Millers_Rd",
                 "Primula_Ave", "Railway_Reserve", "Yarraville") ~ "West Gate Tunnel Project",
     site %in% c("Churchill", "Moe", "Morwell_East", "Morwell_South",
-                "Traralgon")                                    ~ "Latrobe Valley"
+                "Newborough", "Traralgon")                                    ~ "Latrobe Valley"
   ))
 
 
