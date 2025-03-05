@@ -9,7 +9,7 @@ There are two scripts:
 
 In addition to these scripts (described below), the repository contains the following validation documents:
 - `compare emission factors.Rmd`, which compares Melbourne and Manchester emission factor values.
-- [to be added when further advanced] `JIBE_AirPollution_Validation_Melb.Rmd`, which validates Melbourne model air pollution outputs against published values.
+- `JIBE_AirPollution_Validation_Melb.Rmd`, which validates Melbourne model air pollution outputs against published values.
 
 # `monitoring site locations.R`
 
