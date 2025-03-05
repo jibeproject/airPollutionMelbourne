@@ -1,0 +1,637 @@
+---
+title: "JIBE_AirPollution_Validation_Melb"
+author: "Qin, Harry, Steve"
+date: "2025-03-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(sf)
+library(ggspatial) ## map tiles
+library(ggpattern)
+library(RColorBrewer)
+library(readxl)
+library(openair)
+
+options(dplyr.summarise.inform = FALSE) # remove dplyr 'summarise' messages
+
+rm(list=ls())
+```
+
+# Prepare monitoring and related data
+
+## Import data
+```{r}
+# monitoring sites with hourly data, from EPA (note: 'NO2' and 'BPM2.5' 
+# are hourly; there is also 'PPM2.5' for some sites which is 24 hr average)
+melb_hourly <- read_xlsx("../data/original/2018_All_sites_air_quality_hourly_avg_AIR-I-F-V-VH-O-S1-DB-M2-4-0.xlsx")
+
+# monitoring sites with annual data only (includes both EPA and others)
+melb_annual_NO2 <- read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
+                             sheet = "no2_vic_2017-2019") 
+
+melb_annual_PM2.5 <- read_xlsx("../data/processed/annual_pm_no2_vic.xlsx",
+                               sheet = "pm25_vic_2017-2020")
+
+# classified sites
+sites_classified <- read.csv("../data/processed/monitoring site locations classified.csv")
+
+```
+
+The EPA data provides hourly NO2 data, and hourly PM2.5 data ('BPM2.5') as well as daily PM2.5 data ('PPM2.5') for some of the same sites.
+
+The annual data was compiled by Luke Knibbs, and includes both EPA sites and other sites. Among the other sites, six (Barbara Beyer Reserve, Donald Mclean Reserve, Miller Street, Primula Ave, Railway Reserve and Yarraville) are in the vicinity of the West Gate Freeway, monitored as part of the West Gate Tunnel Project: https://bigbuild.vic.gov.au/library/west-gate-tunnel-project/air-quality-monitoring-reports.
+
+Some sites are within Greater Melbourne, while others are in other parts of Victoria.  Of those outside Greater Melbourne, five (Churchill, Moe, Morwell East, Morwell South, Newborough and Traralgon) are in the Latrobe Valley, where the coal-fired power stations are located.
+
+Sites have been classified as 'Urban', 'Suburban' and 'Rural', and as 'Background', 'Traffic' and 'Industrial', based on the criteria specified in https://uk-air.defra.gov.uk/networks/site-types.  There are no 'Rural' sites.  There are also no 'Traffic' sites. 'Traffic' classification requires a sample probe no more than 10m from the kerbside.  There are no such sites in the sample (though there are a number of sites where the distance from the kerbside is between 10m and 15m: Alphington, Brooklyn, Campbellfield, Melbourne CBD, Millers Rd and Yarraville; and also Churchill (though in that case the road is a residential loop road with minimal traffic).
+
+
+### NO2 monitoring sites in Greater Melbourne
+```{r}
+# bounding box for map (for both NO2 and PM2.5 maps)
+bbox <- st_sfc(st_polygon(list(matrix(c(
+  144.7, -38.0,  # Bottom-left (lon, lat)
+  145.4, -38.0,  # Bottom-right
+  145.4, -37.75, # Top-right
+  144.7, -37.75, # Top-left
+  144.7, -38.0   # Closing the polygon
+), ncol = 2, byrow = TRUE))), crs = 4326)
+
+# transform to EPSG:3857
+bbox_3857 <- st_transform(bbox, 3857)
+
+# extract limits
+xlim <- st_bbox(bbox_3857)[c("xmin", "xmax")]
+ylim <- st_bbox(bbox_3857)[c("ymin", "ymax")]
+
+# function to create map (for both NO2 and PM2.5)
+site_plot <- function(mydata, mytitle) {
+  ggplot(mydata) + 
+  annotation_map_tile(type="osm", zoom=10, alpha=0.6, progress = "none") +
+  geom_sf(aes(colour = category), size = 3) +
+  scale_color_brewer(palette = "Set1") +
+  labs(title = mytitle, color = "Category") +
+  coord_sf(xlim = xlim, ylim = ylim, expand = FALSE) +
+    theme_void()  # remove labels, ticks, grids
+}
+
+# categorise NO2 sites by frequency of observations
+hourly_sites_NO2 <- melb_hourly %>% 
+  filter(param_short_name == "NO2") %>%
+  .$sp_name %>% unique() %>% gsub(" ", "_", .)
+annual_sites_NO2 <- melb_annual_NO2 %>% 
+  filter(year_ == 2018) %>% 
+  .$site %>% unique()
+NO2_data <- sites_classified %>%
+  filter(region == "Greater Melbourne") %>%
+  mutate(freq = case_when(
+    site %in% hourly_sites_NO2 ~ "hourly",
+    site %in% annual_sites_NO2 ~ "annual"
+  )) %>%
+  filter(!is.na(freq)) %>%  # omit where no NO2 data (ie no 'freq' field)
+  mutate(category = paste(class, freq)) %>%
+  dplyr::select(site, long, lat, category) %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  st_transform(3857)
+
+# plot map
+site_plot(NO2_data, "NO2 monitoring sites in Greater Melbourne")
+
+```
+
+
+### PM2.5 monitoring sites in Greater Melbourne
+```{r}
+# categorise PM2.5 sites by frequency of observations
+hourly_sites_PM2.5 <- melb_hourly %>% 
+  filter(param_id == "BPM2.5") %>%
+  .$sp_name %>% unique() %>% gsub(" ", "_", .)
+daily_sites_PM2.5 <- melb_hourly %>%
+  filter(param_id == "PPM2.5")  %>%
+  .$sp_name %>% unique() %>% gsub(" ", "_", .)
+annual_sites_PM2.5 <- melb_annual_PM2.5 %>% 
+  filter(year_ == 2018) %>% 
+  .$site %>% unique()
+PM2.5_data <- sites_classified %>%
+  filter(region == "Greater Melbourne") %>%
+  mutate(freq = case_when(
+    site %in% hourly_sites_PM2.5 ~ "hourly",
+    site %in% daily_sites_PM2.5 ~ "daily",
+    site %in% annual_sites_PM2.5 ~ "annual"
+  )) %>%
+  filter(!is.na(freq)) %>%  # omit where no PM2.5 data (ie no 'freq' field)
+  mutate(category = paste(class, freq)) %>%
+  dplyr::select(site, long, lat, category) %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326) %>%
+  st_transform(3857)
+
+# plot map
+site_plot(PM2.5_data, "PM2.5 monitoring sites in Greater Melbourne")
+
+```
+
+## Review hourly against annual data
+
+Where we have both hourly values and annual values, it's assumed that the annual values would be the mean of the hourly values.  This is generally the case.  Specifically:
+- some NO2 figures match exactly, while some have the annual value rounded to the nearest number, which matches the rounded mean value.
+- PM2.5 figures are rounded to one decimal place, which sometimes matches the rounded mean value, but in other cases differs by 0.1 or 0.2 from the rounded mean value.
+
+Note that we do not have daily PM2.5 values for any of the sites for which we have annual PM2.5 values (and so daily values are not included in the table below).
+
+```{r}
+annual <- bind_rows(
+  melb_annual_NO2 %>%
+    filter(year_ == 2018) %>%
+    mutate(param_id = "NO2") %>%
+    mutate(site = gsub("_", " ", site)) %>%
+    dplyr::select(site, param_id, annual_value = NO2_annual_ppb),
+  melb_annual_PM2.5 %>%
+    filter(year_ == 2018) %>%
+    mutate(param_id = "PM2.5") %>%
+    mutate(site = gsub("_", " ", site)) %>%
+    dplyr::select(site, param_id, annual_value = `PM25_annual_µg/m^3`)
+) %>%
+  filter(!is.na(annual_value))
+
+melb_hourly_annualised <- melb_hourly %>%
+  
+  # filter to relevant pollutants
+  filter(param_id %in% c("NO2", "BPM2.5", "PPM2.5")) %>%
+  mutate(basis = ifelse(param_id %in% c("NO2", "BPM2.5"), "hourly", "daily")) %>%
+  mutate(param_id = ifelse(param_id %in% c("BPM2.5", "PPM2.5"), "PM2.5", param_id)) %>%
+
+  # calculate mean of the hourly/daily values
+  # mutate(sp_name = gsub(" ", "_", sp_name)) %>%
+  rename(site = sp_name) %>%
+  group_by(site, param_id, basis) %>%
+  summarise(mean_value = mean(value)) %>%
+  ungroup()
+
+annual_compared <- melb_hourly_annualised %>%
+  
+  # join the annual values
+  left_join(annual, by = c("site", "param_id")) %>%
+  filter(!is.na(annual_value)) %>%
+  arrange(param_id, site)
+
+knitr::kable(annual_compared, col.names = c("Site", "Parameter", "Measuring basis",
+                                            "Mean value", "Annual value"))
+
+```
+
+
+## Compare all annual/annualised results by class
+
+Review the annualised results for all sites for which either hourly or annual results exist (whether inside Greater Melbourne or not), to explore differences between classifications.  Note that the plots below include all sites for which we have any NO2 or PM2.5 readings, even those for which we don't have hourly readings.
+
+```{r}
+# join annual and annualised hourly results
+all_annual <- melb_hourly_annualised %>%
+  
+  # remove annualised daily values, as we have annualised hourly values for same sites 
+  filter(basis == "hourly") %>%
+  dplyr::select(-basis) %>%
+  rename(value = mean_value) %>%
+  
+  #  add the annual values, but only where sites don't have annualised hourly values
+  bind_rows(annual %>%
+              filter(!site %in% melb_hourly_annualised$site) %>%
+              rename(value = annual_value)) %>%
+  
+  # join classifications
+  left_join(sites_classified %>%
+              mutate(site = gsub("_", " ", site)) %>%
+              dplyr::select(site, class),
+            by = "site")
+
+# function for plot of readings
+annual_plot <- function(mydata, mytitle, my_x) {
+  ggplot(mydata) +
+    geom_col(aes(x = value, y = fct_rev(site), fill = class)) +
+    scale_fill_brewer(palette = "Set1") +
+    labs(title = mytitle,
+         x = my_x,
+         y = "Site",
+         fill = "Classification") +
+    theme_minimal()
+}
+
+
+melb_NO2 <- all_annual %>% filter(param_id == "NO2")
+melb_PM2.5 <- all_annual %>% filter(param_id == "PM2.5")
+
+```
+
+Plot the NO2 readings.  Among the Melbourne readings, there is little difference based on classification, except for Primula Ave, which is one of the West Gate Fwy sites monitored as part of the West Gate Tunnel project.  Alphington (where the measuring station is between 10m and 15m from the road, and so is close to a 'Traffic' classification) is no higher than the 'Background' sites.  Readings for the sites outside Greater Melbourne are lower, even though both the Background sites (Morwell South and Traralgon) are in the Latrobe Valley. 
+
+The lowest Background site is Morwell South.
+
+```{r}
+annual_plot(melb_NO2, "Annual mean NO2 levels by classification", "NO2 value (ppb)")
+
+```
+
+Plot the PM2.5 readings.  Again, among the Melbourne sites there is little difference based on classification.  Alphington and Yarraville (where the measuring stations are between 10m and 15m from the road, and so are close to a 'Traffic' classification) are not notably higher than the 'Background' sites.  The readings for sites outside Greater Melbourne are generally slightly (but not much) lower than those in Greater Melbourne, again noting that all the Background sites (Churchill, Moe, Morwell East, Morwell South and Traralgon) are in the Latrobe Valley.
+
+The lowest Background site is Churchill.
+
+
+```{r}
+annual_plot(melb_PM2.5, "Annual mean PM2.5 levels by classification", "PM2.5 value (μg/m3)")
+
+```
+
+# Calculate increment of the valid sites
+
+## Reference sites
+
+In the Manchester validation code, only Urban Traffic sites are selected for validation, and they are compared to reference Urban and Rural Background sites.
+
+A different approach is required for Melbourne, where there are no true Traffic sites, and nearly all sites are Background.  Accordingly:
+- the Industrial sites are excluded,
+- the Background sites in Greater Melbourne are used for validation, and
+- the Background sites outside Greater Melbourne with the lowest readings (Morwell South for NO2 and Churchill for PM2.5) are used as reference sites.
+
+Morwell South and Churchill are perhaps not ideal as reference sites, as they are located in the Latrobe Valley where the State's coal-fired power stations are situated, but are the best available as (1) they are the sites with the lowest readings, and (2) all the other non-Melbourne Background sites for which we have 2018 NO2 or PM2.5 data are also in the Latrobe Valley.
+
+```{r}
+
+# Reference sites
+ref_NO2 <- "Morwell South"
+ref_PM2.5 <- "Churchill"
+
+```
+
+## Prepare relevant hourly Melbourne and reference site data
+
+```{r}
+# filter Melb and ref site hourly data to relevant NO2 & PM2.5 readings, plus other required details
+melbourne <- melb_hourly %>%
+  
+  # filter to relevant pollutants, and create separate columns for each
+  # (note that param_short_name 'PM2.5' is only the hourly readings, not the 
+  # daily readings that also exist for some of the same sites)
+  filter(param_short_name %in% c("NO2", "PM2.5")) %>%
+  mutate(param_short_name = tolower(param_short_name)) %>%
+  pivot_wider(names_from = param_short_name, values_from = value) %>%
+  
+  # restructure other columns as required
+  mutate(source = "epa") %>%
+  mutate(code = as.character(sample_point_id)) %>%
+  
+  # select required columns
+  dplyr::select(source, date = sample_datetime, site = sp_name, code, no2, pm2.5,
+                latitude, longitude) %>%
+  
+  # join the classifications
+  left_join(sites_classified %>%
+              mutate(site = gsub("_", " ", site)) %>%
+              dplyr::select(site, region, site_type = class),
+            by = "site") %>%
+
+  # filter to Greater Melbourne and reference sites
+  filter(region == "Greater Melbourne" |
+           (site == ref_NO2 & !is.na(no2)) |
+           (site == ref_PM2.5 & !is.na(pm2.5))) %>%
+  dplyr::select(-region)
+
+```
+Check the structure of the Melbourne data 
+
+```{r}
+knitr::kable(head(melbourne))
+```
+Sites for validation: in total, 4 Urban or Suburban Background sites, plus the two reference sites (one for each pollutant)
+
+```{r}
+sites <- melbourne %>%
+  select(source, site, code, site_type) %>%
+  distinct() %>%
+  filter(site_type %in% c("Urban Background", "Suburban Background") | site %in% c(ref_NO2, ref_PM2.5)) %>%
+  mutate(site_type = factor(site_type, levels = c("Suburban Background", "Urban Background", 
+                                                  "Suburban Background (outside Melbourne)"))) %>%
+  arrange(site_type, site)
+
+knitr::kable(sites)
+```
+
+## Plots of hourly Melbourne and reference data
+
+```{r, fig.height = 10, fig.width = 15}
+timePlot(melbourne %>% filter(site %in% sites$site), type = "site", pollutant = c("no2", "pm2.5"))
+
+melbourne_time = timeVariation(melbourne %>% filter(site %in% sites$site), type = "site", pollutant = c("no2", "pm2.5"))
+
+melbourne_dayHour <- melbourne_time$data$day.hour %>%
+  mutate(wkday_group = case_when(wkday %in% c("Monday", "Tuesday", "Wednesday", 
+                                              "Thursday", "Friday") ~ "Weekday" ,
+                                 TRUE ~ wkday))%>%
+  group_by(variable, site, wkday_group, hour) %>% 
+  summarise(mean_value = mean(Mean, na.rm = FALSE))%>%
+  ungroup() %>%
+  spread(site, mean_value) %>%
+  rename(mean_value_ref_no2 = `Morwell South`, mean_value_ref_pm2.5 = `Churchill`) %>%
+  gather(site, mean_value, -c(variable, wkday_group, hour, 
+                              mean_value_ref_no2, mean_value_ref_pm2.5)) %>%
+  # calculate increment as site value minus reference value
+  mutate(mean_value_increment = case_when(
+    variable == "no2" ~ mean_value - mean_value_ref_no2,
+    variable == "pm2.5" ~ mean_value - mean_value_ref_pm2.5
+  ))
+
+ggplot(melbourne_dayHour,
+       aes(x = hour, 
+           y = mean_value_increment, group = wkday_group, colour = wkday_group)) +
+  geom_line() +
+  facet_grid(variable ~ site, scales = "free_y") +
+  labs(title = "Melbourne monitoring locations",
+       x = "Hour",
+       y = "Increment NO2 (ppb) and PM2.5 (μg/m3)")
+```
+
+# Compare Increment with JIBE modelled value
+
+NOTE - the code below is adapted from the Manchester code, but has not been tested.  It  will need to be tested and probably refined once the JIBE modelled values for Melbourne are available.
+
+```{r}
+
+# nearest link id to site
+#   SP note: these link ids are from edgesMelbourne.gpkg, see 'emission factors.R' section 3;
+#   check that they match the link ids used in the matsim outputs
+sites2matsimLink <- sites_classified %>%
+  filter(region == "Greater Melbourne") %>%
+  mutate(site = gsub("_", " ", site)) %>%
+  dplyr::select(site, linkId = nearest_car_edgeID) %>%
+  filter(site %in% sites$site)
+
+days = c("thursday", "saturday", "sunday")
+
+# import JIBE data
+base_directory = "/PATH TO/melbourne/scenOutput/silo_mito_matsim_base_UT/"  ## SP note: CHECK AND COMPLETE PATH
+for(day in days){
+  jibe_carTruck <- read_csv(paste0(base_directory,"linkConcentration_", day, "_carTruck.csv",sep=""))
+  jibe_carTruck <- jibe_carTruck %>% filter(linkId %in% sites2matsimLink$linkId)
+  jibe_bus <- read_csv(paste0(base_directory,"linkConcentration_", day, "_bus.csv",sep=""))
+  jibe_bus <- jibe_bus %>% filter(linkId %in% sites2matsimLink$linkId)
+
+  # combine bus and car truck concentration
+  jibe_all <- merge(jibe_carTruck, jibe_bus,
+                    by = c("linkId", "pollutant", "timebin"),
+                    suffixes = c("_carTruck", "_bus"))
+
+  jibe_all <- jibe_all %>%
+    filter(timebin != 86400) %>%
+    rename(hour = timebin) %>%
+    mutate(hour = hour / 3600) %>%
+    mutate(value_total = value_carTruck + value_bus)
+
+  # combine PM2.5 and PM2.5_non_exhausted
+  jibe_all = jibe_all%>%
+    select(-value_carTruck, -value_bus)%>%
+    spread(pollutant, value_total)%>%
+    mutate(PM2_5_total = PM2_5 + PM2_5_non_exhaust)%>%
+    select(linkId, hour ,NO2, PM2_5_total)%>%
+    gather(pollutant, value_total, NO2:PM2_5_total)
+
+  if(day=="thursday"){
+    jibe_all = jibe_all %>% mutate(wkday_group="Weekday")
+    jibe_dayHour = jibe_all
+  }else if(day == "saturday"){
+    jibe_all = jibe_all %>% mutate(wkday_group="Saturday")
+    jibe_dayHour = rbind(jibe_dayHour, jibe_all)
+  }else if(day == "sunday"){
+    jibe_all = jibe_all %>% mutate(wkday_group="Sunday")
+    jibe_dayHour = rbind(jibe_dayHour, jibe_all)
+  }
+}
+
+rm(melbourne, melbourne_time,jibe_carTruck,jibe_bus,jibe_all)
+
+# combine jibe data and Melbourne sites data
+jibe_dayHour = jibe_dayHour %>%
+  left_join(sites2matsimLink)%>%
+  rename(variable = pollutant,
+         jibe_modelled_value= value_total)%>%
+  mutate(variable = case_when(variable == "NO2" ~ "no2",
+                              variable == "PM2_5_total" ~ "pm2.5"))
+validation_dayHour = melbourne_dayHour %>% left_join(jibe_dayHour)
+
+```
+
+**Plot: NO2 measured (-increment) vs. modelled**
+
+The values of NO2 for the Melbourne monitoring sites provided by the EPA are in ppb (parts per billion).  Based on the Manchester validation script, it's assumed the Matsim outputs are in μg/m3 (micrograms per cubic meter).  Accordingly, the EPA values are converted to μg/m3 by multiplying by 1.88 (see https://uk-air.defra.gov.uk/reports/cat06/0502160851_Conversion_Factors_Between_ppb_and.pdf, using the WHO value (25°C) rather than the EC value (20°C)).
+
+```{r}
+ggplot(data = validation_dayHour %>%
+         filter(variable == "no2") %>%
+         mutate(mean_value_increment = mean_value_increment * 1.88),  # to convert ppb to μg/m3
+       aes(x = hour)) +
+  geom_line(aes(y = jibe_modelled_value, color = "Modelled"), linetype = "dashed") +
+  geom_point(aes(y = jibe_modelled_value, color = "Modelled")) +
+  geom_line(aes(y = mean_value_increment, color = "Measured")) +
+  geom_point(aes(y = mean_value_increment, color = "Measured")) +
+  labs(title = bquote("NO2 Measured (-increment) vs. modelled"),
+       x = "Hour",
+       y = bquote("NO"[2]~"Concentration (μg/m"^3*")")) +
+  facet_grid(wkday_group~site)+
+  theme(legend.position = "top") +
+  scale_x_continuous(breaks = 0:23) +
+  guides(color = guide_legend(title = NULL))
+
+```
+
+**Plot: PM2.5 measured (-increment) vs. modelled**
+
+```{r}
+ggplot(data = validation_dayHour %>%
+         filter(variable == "pm2.5"),
+       aes(x = hour)) +
+  geom_line(aes(y = jibe_modelled_value, color = "Modelled"), linetype = "dashed") +
+  geom_point(aes(y = jibe_modelled_value, color = "Modelled")) +
+  geom_line(aes(y = mean_value_increment, color = "Measured")) +
+  geom_point(aes(y = mean_value_increment, color = "Measured")) +
+  labs(title = bquote("PM2.5 Measured (-increment) vs. modelled"),
+       x = "Hour",
+       y = bquote("PM"[2.5]~"Concentration (μg/m"^3*")")) +
+  facet_grid(wkday_group~site)+
+  theme(legend.position = "top") +
+  scale_x_continuous(breaks = 0:23) +
+  guides(color = guide_legend(title = NULL))
+
+```
+
+**Overall model evaluation**
+
+```{r}
+validation_dayAvg = validation_dayHour %>%
+  mutate(mean_value_increment = ifelse(variable == "no2",
+                                       mean_value_increment * 1.88,  # to convert ppb to μg/m3
+                                       mean_value_increment)) %>%
+  group_by(variable, wkday_group, site, linkId) %>%
+  summarise(mean_increment = mean(mean_value_increment),
+            mean_jibe_modelled = mean(jibe_modelled_value))
+
+ggplot(validation_dayAvg %>%
+         filter(variable=="no2"),
+       aes(x = mean_increment, y = mean_jibe_modelled, color = site, shape = wkday_group)) +
+  geom_point(size = 2) +
+  labs(title = "NO2 Day Average Measured (-increment) vs. modelled",
+       x = bquote("Measured NO"[2]~"(μg/m"^3*")"),
+       y = bquote("Modelled NO"[2]~"(μg/m"^3*")")) +
+  geom_abline(slope = 2, intercept = 0) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_abline(slope = 0.5, intercept = 0) +
+  expand_limits(x=c(0,20), y=c(0,20))
+
+ggplot(validation_dayAvg %>%
+         filter(variable=="pm2.5"),
+       aes(x = mean_increment, y = mean_jibe_modelled, color = site, shape = wkday_group)) +
+  geom_point(size = 2) +
+  labs(title = "PM2.5 Day Average Measured (-increment) vs. modelled",
+       x = bquote("Measured PM"[2.5]~"(μg/m"^3*")"),
+       y = bquote("Modelled PM"[2.5]~"(μg/m"^3*")")) +
+  geom_abline(slope = 2, intercept = 0) +
+  geom_abline(slope = 1, intercept = 0) +
+  geom_abline(slope = 0.5, intercept = 0) +
+  expand_limits(x=c(0,20), y=c(0,20))
+
+```
+
+# Manchester code used for above Melbourne code
+
+NOTE - this code is retained for reference until the Mebourne code has been tested and refined as noted above, and then can be deletecd.
+```{r}
+# ###########################################################
+# #### Compare Urban Increment with JIBE modelled value #####
+# ###########################################################
+# ### AURN urban traffic sites
+# # BURW - # 255376out
+# # CW -   # 161352out
+# 
+# ### AQE Urban Traffic sites
+# # TRF2 - Trafford A56             # 345271rtn
+# # STK7 - Stockport Cheadle A34    # 280445out // # 475747rtn??
+# # STK5 - Stockport Hazel Grove    # 280009out
+# # MAN1 - Manchester Oxford Road   # 205194rtn
+# # BUR2 - Bury Prestwhich          # 226206out
+# # BUR1 - Bury Radcliffe           # 250971out
+# # M60 - Salford M60               # 227913out
+# 
+# sites2matsimLink = data.frame(site = c("BURW","CW","TRF2","STK7","STK5","MAN1","BUR2","BUR1","M60"),
+#                               linkId = c("255376out","161352out","345271rtn","280445out","280009out",
+#                                          "205194rtn","226206out","250971out","227913out"))
+# days = c("thursday","saturday", "sunday")
+# 
+# ## Import jibe data 
+# base_directory = "/home/qin/models/manchester/scenOutput/silo_mito_matsim_base_UT/"
+# for(day in days){
+#   jibe_carTruck <- read_csv(paste0(base_directory,"linkConcentration_", day, "_carTruck.csv",sep=""))
+#   jibe_carTruck <- jibe_carTruck%>%filter(linkId%in%sites2matsimLink$linkId)
+#   jibe_bus <- read_csv(paste0(base_directory,"linkConcentration_", day, "_bus.csv",sep=""))
+#   jibe_bus <- jibe_bus%>%filter(linkId%in%sites2matsimLink$linkId)
+#   
+#   # combine bus and car truck concentration
+#   jibe_all <- merge(jibe_carTruck, jibe_bus, 
+#                     by = c("linkId", "pollutant", "timebin"),
+#                     suffixes = c("_carTruck", "_bus"))
+#   
+#   jibe_all <- jibe_all %>% 
+#     filter(timebin != 86400) %>%  
+#     rename(hour = timebin) %>%
+#     mutate(hour = hour / 3600) %>%
+#     mutate(value_total = value_carTruck + value_bus)
+#   
+#   # combine PM2.5 and PM2.5_non_exhausted
+#   jibe_all = jibe_all%>%
+#     select(-value_carTruck,-value_bus)%>%
+#     spread(pollutant, value_total)%>%
+#     mutate(PM2_5_total = PM2_5 + PM2_5_non_exhaust)%>%
+#     select(linkId,hour,NO2,PM2_5_total)%>%
+#     gather(pollutant, value_total, NO2:PM2_5_total)
+#   
+#   if(day=="thursday"){
+#     jibe_all = jibe_all%>%mutate(wkday_group="Weekday")
+#     jibe_dayHour = jibe_all
+#   }else if(day == "saturday"){
+#     jibe_all = jibe_all%>%mutate(wkday_group="Saturday")
+#     jibe_dayHour = rbind(jibe_dayHour, jibe_all)
+#   }else if(day == "sunday"){
+#     jibe_all = jibe_all%>%mutate(wkday_group="Sunday")
+#     jibe_dayHour = rbind(jibe_dayHour, jibe_all)
+#   }
+# }
+# 
+# rm(manchester, manchester_time,jibe_carTruck,jibe_bus,jibe_all)
+# 
+# 
+# # combine jibe data and Manchester sites data
+# jibe_dayHour = jibe_dayHour %>%
+#   left_join(sites2matsimLink)%>%
+#   rename(variable = pollutant,
+#          jibe_modelled_value= value_total)%>%
+#   mutate(variable = case_when(variable == "NO2" ~ "no2",
+#                               variable == "PM2_5_total" ~ "pm2.5"))
+# validation_dayHour = manchester_dayHour%>%left_join(jibe_dayHour)
+# 
+# # Plot: NO2 Measured (-urban increment) vs. modelled 
+# ggplot(data = validation_dayHour%>%filter(variable=="no2"), aes(x = hour)) +
+#   geom_line(aes(y = jibe_modelled_value, color = "Modelled"), linetype = "dashed") +
+#   geom_point(aes(y = jibe_modelled_value, color = "Modelled")) +
+#   geom_line(aes(y = mean_value_urban_increment, color = "Measured")) +
+#   geom_point(aes(y = mean_value_urban_increment, color = "Measured")) + 
+#   labs(title = bquote("NO2 Measured (-urban increment) vs. modelled"),
+#        x = "Hour",
+#        y = bquote("NO"[2]~"Concentration (μg/m"^3*")")) +
+#   facet_grid(wkday_group~site)+
+#   theme(legend.position = "top") +
+#   scale_x_continuous(breaks = 0:23) +
+#   guides(color = guide_legend(title = NULL))
+# 
+# 
+# # Plot: NO2 Measured (-rural increment) vs. modelled 
+# ggplot(data = validation_dayHour%>%filter(variable=="no2"), aes(x = hour)) +
+#   geom_line(aes(y = jibe_modelled_value, color = "Modelled"), linetype = "dashed") +
+#   geom_point(aes(y = jibe_modelled_value, color = "Modelled")) +
+#   geom_line(aes(y = mean_value_rural_increment, color = "Measured")) +
+#   geom_point(aes(y = mean_value_rural_increment, color = "Measured")) + 
+#   labs(title = bquote("NO2 Measured (-rural increment) vs. modelled"),
+#        x = "Hour",
+#        y = bquote("NO"[2]~"Concentration (μg/m"^3*")")) +
+#   facet_grid(wkday_group~site)+
+#   theme(legend.position = "top") +
+#   scale_x_continuous(breaks = 0:23) +
+#   guides(color = guide_legend(title = NULL))
+# 
+# #####################################################
+# # Overall model evaluation
+# validation_dayAvg = validation_dayHour%>%
+#   group_by(variable,wkday_group,site,linkId)%>%
+#   summarise(mean_rural_increment = mean(mean_value_rural_increment),
+#             mean_urban_increment = mean(mean_value_urban_increment),
+#             mean_jibe_modelled = mean(jibe_modelled_value))
+# 
+# ggplot(validation_dayAvg%>%filter(variable=="no2"), aes(x = mean_urban_increment, y = mean_jibe_modelled, color = site, shape = wkday_group)) +
+#   geom_point(size = 2) +
+#   labs(title = "NO2 Day Average Measured (-urban increment) vs. modelled",
+#        x = bquote("Measured NO"[2]~"(μg/m"^3*")"),
+#        y = bquote("Modelled NO"[2]~"(μg/m"^3*")")) +
+#   geom_abline(slope = 2, intercept = 0) +
+#   geom_abline(slope = 1, intercept = 0) +
+#   geom_abline(slope = 0.5, intercept = 0) +
+#   expand_limits(x=c(0,20), y=c(0,20))
+# 
+# ggplot(validation_dayAvg%>%filter(variable=="no2"), aes(x = mean_rural_increment, y = mean_jibe_modelled, color = site, shape = wkday_group)) +
+#   geom_point(size = 2) +
+#   labs(title = "NO2 Day Average Measured (-rural increment) vs. modelled",
+#        x = bquote("Measured NO"[2]~"(μg/m"^3*")"),
+#        y = bquote("Modelled NO"[2]~"(μg/m"^3*")")) +
+#   geom_abline(slope = 2, intercept = 0) +
+#   geom_abline(slope = 1, intercept = 0) +
+#   geom_abline(slope = 0.5, intercept = 0) +
+#   expand_limits(x=c(0,20), y=c(0,20))
+# ###############################################
+```
