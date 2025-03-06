@@ -8,6 +8,9 @@ options(scipen = 1000)
 # 1 Read in required data ----
 # -----------------------------------------------------------------------------#
 
+## 1.1 COPERT Australia data ----
+## ------------------------------------#
+
 # inputs and emissions as calculated by COPERT Australia, for Victorian fleet 2010
 # inputs: vehicles, mileage and driving share as between U, R and H
 vehicles <- readxl::read_xls("../data/processed/COPERT_outputs_vic.xls",
@@ -96,6 +99,9 @@ Ltrip <- readxl::read_xlsx("../data/processed/COPERT_outputs_vic_supp.xlsx",
   filter(parameter == "Ltrip (km)") %>% pull(value)
 
 
+## 1.2 PIARC data ----
+## ------------------------------------#
+
 # future factor and gradient tables from PIARC 
 pass_future <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                                 sheet = "pass_future", skip = 3) %>%
@@ -139,6 +145,16 @@ hgv_NOx <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
 hgv_PM <- readxl::read_xlsx("../data/original/PIARC_tables_aust.xlsx",
                              sheet = "hgv_PM", skip = 4) %>%
   setNames(gradient_names)
+
+
+## 1.3 Manchester (HBEFA) data ----
+## ------------------------------------#
+# emissions factors from Manchester (HBEFA) are used to spread the COPERT factors
+# (which are based on an average speed model) into multiple factors for different
+# traffic situations (hot emissions) or 'AmbientCondPatterns' (cold start emissions)
+
+manch_hot <- read_xlsx("./Manchester emission examples/EFA_HOT_Vehcat_healthModelMCR.XLSX")
+manch_cold <- read_xlsx("./Manchester emission examples/EFA_ColdStart_Vehcat_healthModelMCR.XLSX")
 
 
 # 2 Calculate hot and cold emissions factors ----
@@ -553,10 +569,163 @@ emissions.hot <- emissions.hot.zero %>%
   dplyr::select(VehCat, Year, Component, RoadCat, Gradient, V_weighted, EFA_weighted)
 
 
-# 4 Write outputs ----
+# 4 Write 'unspread' outputs ----
 # -----------------------------------------------------------------------------#
 
-write.table(emissions.hot, "../data/processed/EFA_hot_melbourne.txt", sep = ";", row.names = F)
-write.table(emissions.cold, "../data/processed/EFA_coldstart_melbourne.txt", sep = ";", row.names = F)
+# these outputs (before being spread into different traffic situations and
+# 'AmbientCondPatterns', are used for comparision to the Manchester values)
 
-                                                          
+write.table(emissions.hot, "../data/processed/EFA_hot_melbourne_unspread.txt", sep = ";", row.names = F)
+write.table(emissions.cold, "../data/processed/EFA_coldstart_melbourne_unspread.txt", sep = ";", row.names = F)
+
+
+# 5 Spread emissions for traffic situations / conditions ----
+# -----------------------------------------------------------------------------#
+
+## 5.1 Hot emissions ----
+## ------------------------------------#
+
+# categorise Manchester emissions as Urban, Rural or Highway
+manch_hot_categorised <- manch_hot %>%
+  
+  mutate(RoadCat = case_when(
+    str_detect(TrafficSit, "^URB/MW-Nat./") ~ "Highway",
+    str_detect(TrafficSit, "^RUR/MW/")      ~ "Highway",
+    str_detect(TrafficSit, "^RUR/Semi-MW/") ~ "Highway",
+    str_detect(TrafficSit, "^URB/") ~ "Urban",
+    str_detect(TrafficSit, "^RUR/") ~ "Rural"
+  ))
+
+# dataframe to hold spread emission outputs
+emissions.hot.factors <- c()
+
+# calculate traffic and speed factors from Manchester data: emissions and speed,
+# divided by emissions and speed for a 'reference' category that has a speed
+# closest to the average speed used for the Melbourne data
+for (veh_cat in emissions.hot$VehCat %>% unique()) {
+  for (road_cat in emissions.hot$RoadCat %>% unique()) {
+    for (component in emissions.hot$Component %>% unique()) {
+      
+      # select the relevant Manchester readings
+      manch_selection <- manch_hot_categorised %>%
+        filter(VehCat == veh_cat & RoadCat == road_cat & Component == component)
+      
+      # select the Melbourne average speed for the vehicle and road category
+      melb_speed = speeds %>%
+        filter(VehCat == veh_cat) %>%
+        pull(road_cat)
+        
+      # select the Manchester reference traffic situation, being the one 
+      # with the V_weighted (ie speed) closest to the melb_speed
+      ref_trafficsit <-  manch_selection %>%
+        # select from zero gradient
+        filter(Gradient == "0%") %>%
+        # closest V_weighted to melb_speed
+        mutate(speed_diff = abs(V_weighted - melb_speed)) %>%
+        filter(speed_diff == min(speed_diff)) %>%
+        # select one in case of equality
+        slice_head() %>%
+        # select the TrafficSit
+        pull(TrafficSit)
+      
+      # select the full set of factors (ie all gradients) for the traffic situation
+      ref_factors <- manch_selection %>%
+        filter(TrafficSit == ref_trafficsit) %>%
+        dplyr::select(Gradient, EFA_ref = EFA_weighted, V_ref = V_weighted)
+      
+      # calculate traffic and speed factors for Manchester, being the EFA_weighted
+      # and V_weighted divided by the reference factor for the gradient
+      manch_factors <- manch_selection %>%
+        left_join(ref_factors, by = "Gradient") %>%
+        mutate(EFA_factor = EFA_weighted / EFA_ref,
+               V_factor = V_weighted / V_ref) %>%
+        
+        # keep just the scenario columns and the factors
+        dplyr::select(VehCat, Year, Component, TrafficSit, Gradient, RoadCat, EFA_factor, V_factor)
+
+      # add to the dataframe
+      emissions.hot.factors <- bind_rows(emissions.hot.factors, manch_factors)
+    }
+  }
+}
+
+# stretch Melb hot emissions into a dataframe as long as the Manch dataframe,
+# and calculate the Melb emissions and speeds by applying the factors
+emissions.hot.spread <- emissions.hot.factors %>%
+  
+  # 'emissions.hot.factors' is the Manchester factors; now join the Melb values ('emissions.hot')
+  left_join(emissions.hot, by = c("VehCat", "Year", "Component", "Gradient", "RoadCat")) %>%
+  
+  # calculate the Melb emissions and speed by applying the Manch factors
+  mutate(EFA_weighted = EFA_weighted * EFA_factor,
+         V_weighted = V_weighted * V_factor) %>%
+  
+  # select required output fields
+  dplyr::select(VehCat, Year, Component, TrafficSit, Gradient, V_weighted, EFA_weighted)
+
+
+## 5.2 Cold start emissions ----
+## ------------------------------------#
+
+# dataframe to hold spread emission outputs
+emissions.cold.factors <- c()
+
+# calculate condition factors from Manchester data: emissions,
+# average emissions for the condition patterns for that vehicle type
+for (veh_cat in emissions.cold$VehCat %>% unique()) {
+    for (component in emissions.cold$Component %>% unique()) {
+      
+      # select the relevant Manchester readings (but there is no Manchester
+      # HGV or urban bus, so use LCV instead - though it doesn't matter,
+      # because cold emissions for HGV and urban bus are zero anyway)
+      if (veh_cat %in% manch_cold$VehCat) {
+        manch_selection <- manch_cold %>%
+          filter(VehCat == veh_cat & Component == component)
+      } else {
+        manch_selection <- manch_cold %>%
+          filter(VehCat == "LCV" & Component == component) %>%
+          mutate(VehCat = veh_cat)
+      }
+      
+      # select the Manchester reference value, being the mean value
+      ref_value = mean(manch_selection$EFA_weighted)
+      
+      # calculate condition factors for Manchester, being the EFA_weighted
+      # divided by the ref_value - note that where the value is negative, the
+      # reciprocal value is used (where there are negative values, then all
+      # values for that vehicle/pollutant combination are negative; there 
+      # are no combinations where negative and positive values are mixed)
+      manch_factors <- manch_selection %>%
+        mutate(cond_factor = ifelse(EFA_weighted < 0,
+                                    ref_value / EFA_weighted,
+                                    EFA_weighted / ref_value)) %>%
+        
+        # keep just the scenario columns and the factors
+        dplyr::select(VehCat, Year, Component, RoadCat, AmbientCondPattern, cond_factor)
+        
+      # add to the dataframe
+      emissions.cold.factors <- bind_rows(emissions.cold.factors, manch_factors)
+    }
+}
+
+# stretch Melb cold emissions into a dataframe as long as the Manch dataframe,
+# and calculate the Melb emissions by applying the factors
+emissions.cold.spread <- emissions.cold.factors %>%
+  
+  # 'emissions.hot.factors' is the Manchester factors; now join the Melb values ('emissions.cold')
+  full_join(emissions.cold %>% dplyr::select(-AmbientCondPattern), 
+            by = c("VehCat", "Year", "Component", "RoadCat")) %>%
+  
+  # calculate the Melb emissions and speed by applying the Manch factors
+  mutate(EFA_weighted = EFA_weighted * cond_factor) %>%
+  
+  # select required output fields
+  dplyr::select(VehCat, Year, Component, RoadCat, AmbientCondPattern, EFA_weighted)
+
+
+
+# 6 Write final 'spread' outputs ----
+# -----------------------------------------------------------------------------#
+
+write.table(emissions.hot.spread, "../data/processed/EFA_hot_melbourne.txt", sep = ";", row.names = F)
+write.table(emissions.cold.spread, "../data/processed/EFA_coldstart_melbourne.txt", sep = ";", row.names = F)
