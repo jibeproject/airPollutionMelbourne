@@ -1,7 +1,7 @@
 ---
 title: "Compare emission factors"
 author: "Steve"
-date: "2025-03-01"
+date: "2025-03-06"
 output: html_document
 ---
 
@@ -23,19 +23,24 @@ rm(list=ls())
 
 This document compares emission factors for Manchester and Melbourne.  Manchester factors are from HBEFA; Melbourne factors are produced by COPERT Australia, and processed in _*emission factors.R*_.
 
-At the time these comparisons are made, the Melbourne hot factors (unlike the Manchester factors) do not include a 'TrafficSit' field with mutliple traffic situations.  Instead, they have a 'RoadCat' field, with only 3 options: 'Urban', 'Rural' and 'Highway'.  And the Melbourne cold start factors (unlike the Manchester factors) do not include an 'AmbientCondPattern' field.
+COPERT Australia is an average speed model, unlike HBEFA which is a traffic situation model. The first ('unspread') set of comparisons in this document use Melbourne hot factors which (unlike the Manchester factors) do not include a 'TrafficSit' field with mutliple traffic situations.  Instead, they have a 'RoadCat' field, with only 3 options: 'Urban', 'Rural' and 'Highway'.  Similarly, the 'unbspread' Melbourne cold start factors used in this document (unlike the Manchester factors) do not include an 'AmbientCondPattern' field.  These factors are referred to as the 'unspread' factors.
+
+A subsequent processing step in _*emission factors.R*_ produces final Melbourne factors which do include 'TrafficSit' and 'AmbientCondPattern' fields.  These are produced by shaping the unspread factors to match the spread of the Manchester factors across those fields.
 
 
 ```{r load_data}
 manch_hot <- read_xlsx("./Manchester emission examples/EFA_HOT_Vehcat_healthModelMCR.XLSX")
 manch_cold <- read_xlsx("./Manchester emission examples/EFA_ColdStart_Vehcat_healthModelMCR.XLSX")
 
-melb_hot <- read.table("../data/processed/EFA_hot_melbourne.txt", header = TRUE, sep = ";")
-melb_cold <- read.table("../data/processed/EFA_coldstart_melbourne.txt", header = TRUE, sep = ";")
+melb_hot <- read.table("../data/processed/EFA_hot_melbourne_unspread.txt", header = TRUE, sep = ";")
+melb_cold <- read.table("../data/processed/EFA_coldstart_melbourne_unspread.txt", header = TRUE, sep = ";")
+
+melb_hot_final <- read.table("../data/processed/EFA_hot_melbourne.txt", header = TRUE, sep = ";")
+melb_cold_final <- read.table("../data/processed/EFA_coldstart_melbourne.txt", header = TRUE, sep = ";")
 
 ```
 
-# Compare hot emissions
+# Compare unspread hot emissions
 
 The plots below compare Melbourne (Urban, Rural and Highway) values with the range of Manchester 'TrafficSit' values, for each pollutant ('Component') and vehicle category ('VehCat') combination.  For each combination, there is a set of plots showing the different gradient values.
 
@@ -247,7 +252,7 @@ hot_compare_table %>%
 
 - For **PM2.5 (non-exhaust)**, note that there is no variation by gradient.  For Urban LCV, the Melbourne values are very close to the Manchester values (0.94).  However, for other categories the Melbourne values are much lower, ranging from 0.11 to 0.34 times the Manchester values.
 
-# Compare cold start emissions
+# Compare unspread cold start emissions
 
 The plots below compare the Melbourne values (which are all Urban) with the range of Manchester 'AmbientCondPattern' values (which, again, are all for Urban roads), for each pollutant ('Component') and vehicle category ('VehCat') combination.  
 
@@ -279,7 +284,7 @@ plot_cold <- function(colddata, component, veh_cat) {
                  fill = city)) +
     scale_fill_manual(values = c("lightgrey", "blue")) +
     labs(title = paste0("cold start - ", component, " - ", veh_cat),
-         x = paste0(component, " (g/km)"),
+         x = paste0(component, " (g/start)"),
          y = "Road category and ambient condition pattern (if available)",
          fill = "City") +
     theme_bw() +
@@ -358,4 +363,137 @@ cold_compare_table %>%
 
 Looking at the table comparing Melbourne values with mean Manchester values, for passenger cars, the Melbourne values are almost double the Manchester values for both NO2 and PM2.5.
 
-For LCV, the Melbourne PM2.5 values are over 7 times the Manchester values.  For passenger cards, the Manchester NO2 values are negative figures, which seems surprising (appearing to indicate that pollution is removed from the atmosphere when a car is started).
+For LCV, the Melbourne PM2.5 values are over 7 times the Manchester values.  For LCVs, the Manchester NO2 values are negative figures.  It is understood that this is intended, with the total emissions being a combination of the hot and cold start values.
+
+# Compare spread hot emissions
+
+This part of the document re-runs the hot emission plots above using the 'spread' emissions, where the Melbourne Urban, Rural and Highway emissions have been spread into multiple 'TrafficSit' categories, to match the shape of the spread of equivalent Manchester emissions.  For this purpose, for each combination of vehicle, road category and pollutant, a reference Manchester traffic situation is selected, being the traffic situation with the closest speed (V_weighted) to the average speed used by COPERT Australia.  Factors for the Manchester traffic situations are calculated as the emission for the traffic situation divided by the emission for the reference situation.  Each of the Melbourne Urban, Rural and Highway emission values is then spread into multiple traffic situations, by multiplying the value by the Manchester factor for that traffic situation.
+
+```{r hot plots final, fig.height = 15, fig.width = 15, echo=FALSE}
+
+# set up folder to store results
+output.dir <- "./EFA_plots_final"
+if (!dir.exists(output.dir)) dir.create(output.dir)
+
+# compile data for comparison
+hotdata <- bind_rows(
+  manch_hot %>% mutate(city = "Manchester", label = paste0(TrafficSit, "_Manchester")),
+  melb_hot_final %>% mutate(city = "Melbourne", label = paste0(TrafficSit, "_Melbourne"))
+) %>%
+  mutate(Gradient = factor(Gradient, 
+                           levels = c("-6%", "-4%", "-2%", "0%", "+2%", "+4%", "+6%"))) %>%
+  mutate(Area = case_when(
+    str_detect(TrafficSit, "^URB/") ~ "Urban",
+    str_detect(TrafficSit, "^RUR/") ~ "Rural"
+  ))
+
+# function to plot chart of values for vehicle, component and gradient combination
+plot_hot <- function(hotdata, component, veh_cat, area) {
+  
+  plotdata <- hotdata %>%
+    # filter for relevant component and vehicle category
+    filter(Component == component & VehCat == veh_cat & Area == area) %>%
+    # order by EFA_weighted within each Gradient
+    mutate(label = tidytext::reorder_within(label, -EFA_weighted, Gradient))
+  
+  
+  # facets to display in document
+  p1 <- ggplot(plotdata) +
+    geom_col(aes(x = EFA_weighted, y = label, fill = city)) +
+    scale_fill_manual(values = c("lightgrey", "blue")) +
+    labs(title = paste0("hot - ", component, " - ", veh_cat, " - ", area),
+         x = paste0(component, " (g/km)"),
+         y = "Traffic situation",
+         fill = "City") +
+    facet_wrap(vars(Gradient), scales = "free_y") +
+    theme_bw() +
+    theme(plot.title = element_text(size = 24),
+          axis.text.y = element_text(size = 2))
+  
+  print(p1)
+  
+  # individual plots for each gradient to save to file
+  for (gradient in plotdata$Gradient %>% unique()) {
+    subplotdata <- plotdata %>%
+      filter(Gradient == gradient)
+    
+    p2 <- ggplot(subplotdata) +
+      geom_col(aes(x = EFA_weighted, y = label, fill = city)) +
+      scale_fill_manual(values = c("lightgrey", "blue")) +
+      labs(title = paste0("hot - ", component, " - ", veh_cat,  " - gradient ", gradient, " - ", area),
+           x = paste0(component, " (g/km)"),
+           y = "Traffic situation or road category",
+           fill = "City") +
+      theme_bw() +
+      theme(axis.text.y = element_text(size = 2))
+    
+    ggsave(paste0(output.dir, "/hot ", component, " ", veh_cat, " ", 
+                  sub("%", "grad", gradient), " ", area, ".png"),
+           plot = p2, device = "png", width = 30, height = 30, units = "cm")
+  }
+}
+
+# plot the values for all combinations
+for (component in hotdata$Component %>% unique()) {
+  for (veh_cat in hotdata$VehCat %>% unique()) {
+    for (area in hotdata$Area %>% unique()) {
+         plot_hot(hotdata, component, veh_cat, area)
+    }
+  }
+}
+
+```
+
+# Compare spread cold emissions
+
+This part of the document re-runs the cold start emission plots above using the 'spread' emissions, where the emissions have been spread into multiple 'AmbientCondPattern' categories, to match the shape of the spread of equivalent Manchester emissions.  For this purpose, for each combination of vehicle and pollutant, the average of the Manchester values for that combination is selected as a reference value.  Factors for the Manchester 'AmbientCondPattern' categories  are calculated as the emission for the pattern divided by the reference value.  Each of the Melbourne emission values is then spread into multiple 'AmbientCondPattern' categories, by multiplying the value by the Manchester factor for that category.
+
+```{r cold plots final, echo=FALSE}
+# set up folder to store results
+output.dir <- "./EFA_plots_final"
+if (!dir.exists(output.dir)) dir.create(output.dir)
+
+# compile data for comparison
+colddata <- bind_rows(
+  manch_cold %>% mutate(city = "Manchester", 
+                        label = paste0(RoadCat, "_", AmbientCondPattern, "_Manchester")),
+  melb_cold_final %>% mutate(city = "Melbourne", 
+                             label = paste0(RoadCat, "_", AmbientCondPattern, "_Melbourne"))
+)
+
+plot_cold <- function(colddata, component, veh_cat) {
+  plotdata <- colddata %>%
+    filter(VehCat == veh_cat & Component == component)
+
+  # only proceed where more than one city to compare (Manchester lacks HGV and bus)
+  if (length(plotdata$city %>% unique()) > 1) {
+
+    p <- ggplot(plotdata) +
+    geom_col(aes(x = EFA_weighted, 
+                 y = fct_reorder(label, EFA_weighted, .desc = TRUE), 
+                 fill = city)) +
+    scale_fill_manual(values = c("lightgrey", "blue")) +
+    labs(title = paste0("cold start - ", component, " - ", veh_cat),
+         x = paste0(component, " (g/start)"),
+         y = "Ambient condition pattern",
+         fill = "City") +
+    theme_bw() +
+    theme(axis.text.y = element_text(size = 4))
+
+  print(p)
+
+  ggsave(paste0(output.dir, "/cold ", component, " ", veh_cat, ".png"),
+         plot = p, device = "png", width = 20, height = 15, units = "cm")
+  }
+}
+
+# plot the values for all combinations (noting that Manchester lacks HGV and urban bus)
+for (component in colddata$Component %>% unique()) {
+  for (veh_cat in colddata$VehCat %>% unique()) {
+      plot_cold(colddata, component, veh_cat)
+  }
+}
+
+```
+
+
