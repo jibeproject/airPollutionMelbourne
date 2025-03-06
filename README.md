@@ -37,16 +37,17 @@ The code requires the following input files, which are available [to authorised 
 
 | File               | Content                                                  |
 |--------------------|----------------------------------------------------------|
-|*data/processed/COPERT_outputs_vic.xls* | Emissions for Victoria, 2010 fleet, as calculated by the COPERT Australia v1.3 tool |
-|*data/processed/COPERT_outputs_vic_supp.xlsx* | Emissions for Victoria, 2010 fleet, as calculated by the COPERT Australia v1.3 tool - supplementary information extracted from the tool but not exported in the main output file |
+|*data/intermediate/COPERT_outputs_vic.xls* | Emissions for Victoria, 2010 fleet, as calculated by the COPERT Australia v1.3 tool |
+|*data/intermediate/COPERT_outputs_vic_supp.xlsx* | Emissions for Victoria, 2010 fleet, as calculated by the COPERT Australia v1.3 tool - supplementary information extracted from the tool but not exported in the main output file |
 |*data/original/PIARC_tables_aust.xlsx* | Selected tables of Australian emissions, extracted from PIARC (World Road Association) 2012, Road Tunnels: Vehicle Emission and Air Demand for Ventilation https://www.piarc.org/en/log-in.htm?path=/ressources/publications/7/16655,WEB-2012R05-EN-revise.pdf|
+|*data/intermediate/EFA_HOT_Vehcat_healthModelMCR.XLSX* and *EFA_ColdStart_Vehcat_healthModelMCR.XLSX* | Emissions for Manchester, from HBEFA |
 
 ## Output file
-The code produces the following output files, which are saved to the `data/processed` directory.
+The code produces the following final output files, which are saved to the `data/processed` directory.
 
 | File               | Content                                                  |
 |--------------------|----------------------------------------------------------|
-|*emission factors hot.csv* | Hot emission factors                              |
-|*emission factors cold start.csv* | Cold start emission factors                |
+|*EFA_hot_melbourne.txt* | Hot emission factors                              |
+|*EFA_coldstart_melbourne.txt* | Cold start emission factors                |
 
 Note the acknowledgement requirement for COPERT Australia, see https://copert.emisia.com/copert-australia/download/: *Any published results using the tool will properly acknowledge the tool, and must display the following copyright statement: © Generated with COPERT Australia v.1.3, created and maintained by Emisia and Transport Energy/Emission Research (TER), 2025*
