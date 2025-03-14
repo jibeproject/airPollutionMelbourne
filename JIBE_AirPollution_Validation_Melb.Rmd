@@ -1,7 +1,7 @@
 ---
 title: "JIBE_AirPollution_Validation_Melb"
 author: "Qin, Harry, Steve"
-date: "2025-03-05"
+date: "2025-03-14"
 output: html_document
 ---
 
@@ -265,6 +265,29 @@ ref_PM2.5 <- "Churchill"
 
 ```
 
+Rates for the reference sites - that is, background NO2 and PM2.5 rates to be used in the model - are as follows.  These results are stated in μg/m3.  (The values of NO2 for the Melbourne monitoring sites provided by the EPA are in ppb (parts per billion).  Based on the Manchester validation script, it's assumed the Matsim outputs are in μg/m3 (micrograms per cubic meter).  Accordingly, the EPA values are converted to μg/m3 by multiplying by 1.88 (see https://uk-air.defra.gov.uk/reports/cat06/0502160851_Conversion_Factors_Between_ppb_and.pdf, using the WHO value (25°C) rather than the EC value (20°C)).)
+
+```{r}
+# Table of background rates from reference sites
+NO2_ref_value <- round(all_annual %>% 
+  filter(site == ref_NO2 & param_id == "NO2") %>%
+  pull(value) * 1.88,  # multiplying by 1.88 to convert ppb to μg/m3
+  1)  # rounded to 1 decimal place
+  
+PM2.5_ref_value <- round(all_annual %>%
+  filter(site == ref_PM2.5 & param_id == "PM2.5") %>%
+  pull(value),
+  1)  # rounded to 1 decimal place
+
+ref_value_table = rbind(
+  c("NO2", ref_NO2, NO2_ref_value),
+  c("PM2.5", ref_PM2.5, PM2.5_ref_value)
+)
+
+knitr::kable(ref_value_table, col.names = c("Pollutant", "Site", "Background rate (μg/m3)"))
+```
+
+
 ## Prepare relevant hourly Melbourne and reference site data
 
 ```{r}
@@ -423,7 +446,7 @@ validation_dayHour = melbourne_dayHour %>% left_join(jibe_dayHour)
 
 **Plot: NO2 measured (-increment) vs. modelled**
 
-The values of NO2 for the Melbourne monitoring sites provided by the EPA are in ppb (parts per billion).  Based on the Manchester validation script, it's assumed the Matsim outputs are in μg/m3 (micrograms per cubic meter).  Accordingly, the EPA values are converted to μg/m3 by multiplying by 1.88 (see https://uk-air.defra.gov.uk/reports/cat06/0502160851_Conversion_Factors_Between_ppb_and.pdf, using the WHO value (25°C) rather than the EC value (20°C)).
+The values of NO2 for the Melbourne monitoring sites provided by the EPA are in ppb (parts per billion), and as described above are converted to μg/m3 by multiplying by 1.88.
 
 ```{r}
 ggplot(data = validation_dayHour %>%
