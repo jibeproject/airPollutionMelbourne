@@ -1,7 +1,7 @@
 ---
 title: "JIBE_AirPollution_Validation_Melb"
 author: "Qin, Harry, Steve"
-date: "2025-03-14"
+date: "2025-07-24"
 output: html_document
 ---
 
@@ -285,6 +285,29 @@ ref_value_table = rbind(
 )
 
 knitr::kable(ref_value_table, col.names = c("Pollutant", "Site", "Background rate (μg/m3)"))
+```
+
+The model also requires 'incremental' values, which in Manchester are calculated as the value for a reference traffic site, minus the value for the reference background site, for each pollutant.  As noted above, Melbourne has no 'traffic' sites meeting the criterion of a sensor within 10m of the road.  Accordingly, for Melbourne, the incremental values are calculated as the mean of the suburban & urban background values, minus the value for the reference background site, for each pollutant.
+
+```{r}
+# Table of incremental rates (suburban/urban background minus reference)
+NO2_inc_value <- round(mean(all_annual %>%
+                         filter(param_id == "NO2" &
+                                  class %in% c("Suburban Background", "Urban Background")) %>%
+                           pull(value)) * 1.88 - NO2_ref_value, 1)  # multiplying by 1.88 to convert ppb to μg/m3
+
+PM2.5_inc_value <- round(mean(all_annual %>%
+                                filter(param_id == "PM2.5" &
+                                         class %in% c("Suburban Background", "Urban Background")) %>%
+                                pull(value)) - PM2.5_ref_value, 1)
+
+inc_value_table = rbind(
+  c("NO2", NO2_inc_value),
+  c("PM2.5", PM2.5_inc_value)
+)
+
+knitr::kable(inc_value_table, col.names = c("Pollutant", "Incremental rate (μg/m3)"))
+
 ```
 
 
